@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Folder, LayoutTemplate, User, BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Folder, LayoutTemplate, User, BookOpen, ChevronDown, ChevronRight, FileQuestion } from 'lucide-react';
 
 export default function ProjectDetail({ project, quotes, onBack, onDraftClick }) {
   const [groupBy, setGroupBy] = useState('public_figure');
@@ -15,7 +15,13 @@ export default function ProjectDetail({ project, quotes, onBack, onDraftClick })
       </motion.div>
       
       <div className="flex-1 bg-white/5 backdrop-blur-md border border-white/20 shadow-2xl rounded-2xl p-8 overflow-y-auto w-full flex flex-col text-white">
-        {project.project_id === 'proj-002' ? (
+        {quotes.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center">
+            <FileQuestion size={48} className="text-white/20 mb-4" />
+            <h3 className="text-lg font-semibold text-white/80 mb-2">Data Not Found</h3>
+            <p className="text-sm text-white/50 max-w-md">Belum ada quote yang tersedia untuk project "{project.project_name}".</p>
+          </div>
+        ) : (
           <>
             <div className="flex gap-4 mb-6 text-sm">
               <button onClick={() => setGroupBy('public_figure')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all border shadow-lg backdrop-blur-sm ${groupBy === 'public_figure' ? 'bg-blue-500/40 border-blue-400' : 'bg-white/5 border-white/10 hover:bg-white/15'}`}><User size={16} /> Public Figure</button>
@@ -23,12 +29,6 @@ export default function ProjectDetail({ project, quotes, onBack, onDraftClick })
             </div>
             <TreeRender data={quotes} groupBy={groupBy} onDraftClick={onDraftClick} />
           </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <Folder size={48} className="text-white/20 mb-4" />
-            <h3 className="text-lg font-semibold text-white/80 mb-2">Belum Ada Visualisasi</h3>
-            <p className="text-sm text-white/50 max-w-md">Tabel untuk project ID {project.project_id} akan dibuatkan UI khususnya nanti.</p>
-          </div>
         )}
       </div>
     </motion.div>
@@ -48,7 +48,7 @@ function TreeRender({ data, groupBy, onDraftClick }) {
 
   return (
     <div className="space-y-6 w-full">
-      {Object.keys(groupedData).length === 0 && <div className="text-white/50 py-10 text-xs">Belum ada data untuk project ini.</div>}
+      {Object.keys(groupedData).length === 0 && <div className="text-white/50 py-10 text-xs">Data Not Found</div>}
       {Object.entries(groupedData).map(([parentName, items], idx) => {
         const isExpanded = !!expandedNodes[parentName];
         return (
