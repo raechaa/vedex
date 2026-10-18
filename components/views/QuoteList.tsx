@@ -2,19 +2,43 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Quote, FileQuestion, ChevronDown, ChevronRight, User, LayoutTemplate } from 'lucide-react';
+import { Quote, FileQuestion, ChevronDown, ChevronRight, User, LayoutTemplate, Search, Plus, X } from 'lucide-react';
 
 export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
   const [groupBy, setGroupBy] = useState('public_figure');
   const [expandedNodes, setExpandedNodes] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const toggleNode = (parentName) => {
     setExpandedNodes(prev => ({ ...prev, [parentName]: !prev[parentName] }));
   };
 
-  const groupedData = quotes.reduce((acc, curr) => {
+  // Filter quotes berdasarkan search & status
+  const filteredQuotes = useMemo(() => {
+    let result = quotes;
+    
+    // Filter by status
+    if (statusFilter !== 'all') {
+      result = result.filter(q => q.status === statusFilter);
+    }
+    
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(q => 
+        (q.public_figure || '').toLowerCase().includes(term) ||
+        (q.main_topic || '').toLowerCase().includes(term) ||
+        (q.quote_text || '').toLowerCase().includes(term)
+      );
+    }
+    
+    return result;
+  }, [quotes, searchTerm, statusFilter]);
+
+  const groupedData = filteredQuotes.reduce((acc, curr) => {
     const key = curr[groupBy] || 'Uncategorized';
     if (!acc[key]) acc[key] = [];
     acc[key].push(curr);
@@ -31,10 +55,11 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
       exit="exit" 
       className="w-full max-w-4xl bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-8 text-white"
     >
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Quote size={20} className="text-yellow-300" />
           Quote Collection
+          <span className="text-xs text-white/50 font-normal">({filteredQuotes.length} quotes)</span>
         </h2>
         <div className="flex gap-2 text-sm">
           <button 
@@ -51,12 +76,51 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
           </button>
         </div>
       </div>
+
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col md:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input 
+            type="text"
+            placeholder="Cari public figure, topik, atau quote..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white/5 border border-white/20 rounded-lg pl-10 pr-8 py-2 text-sm text-white placeholder-white/40 outline-none focus:border-blue-400/50 transition-colors"
+          />
+          {searchTerm && (
+            <button 
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <select 
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-400/50 transition-colors appearance-none"
+          >
+            <option value="all" className="bg-gray-900">Semua Status</option>
+            <option value="Draft" className="bg-gray-900">Draft</option>
+            <option value="Published" className="bg-gray-900">Published</option>
+          </select>
+        </div>
+      </div>
       
-      {quotes.length === 0 ? (
+      {filteredQuotes.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FileQuestion size={48} className="text-white/20 mb-4" />
-          <h3 className="text-lg font-semibold text-white/80 mb-2">Data Not Found</h3>
-          <p className="text-sm text-white/50 max-w-md">Belum ada quotes yang tersedia di database.</p>
+          <h3 className="text-lg font-semibold text-white/80 mb-2">
+            {searchTerm || statusFilter !== 'all' ? 'Data Tidak Ditemukan' : 'Data Not Found'}
+          </h3>
+          <p className="text-sm text-white/50 max-w-md">
+            {searchTerm || statusFilter !== 'all' 
+              ? 'Tidak ada quotes yang cocok dengan pencarian atau filter Anda.' 
+              : 'Belum ada quotes yang tersedia di database.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-6 w-full">
