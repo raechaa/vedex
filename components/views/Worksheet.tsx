@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, FileText, PlaySquare, Code, Wand2, X, Plus, Minus, AlertTriangle } from 'lucide-react';
-import { updateQuote, updateQuoteHashtag, updateQuoteHookText, updateQuoteMainText } from '@/lib/actions';
+import { updateQuote, updateQuoteHashtag, updateQuoteHookText, updateQuoteMainText, updateQuoteCharDesc  } from '@/lib/actions';
 
 // Komponen notifikasi sederhana
 const Notification = ({ message, type, onClose }) => {
@@ -56,10 +56,30 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
   const [isGeneratingHook, setIsGeneratingHook] = useState(false);
   const [isHookWordsWarningOpen, setIsHookWordsWarningOpen] = useState(false);
 
+  // State untuk Image Generator (char desc)
+  const [charDescInput, setCharDescInput] = useState('');
+  const [charDescResult, setCharDescResult] = useState('');
+  const [isGeneratingCharDesc, setIsGeneratingCharDesc] = useState(false);
+  const [copiedCharDesc, setCopiedCharDesc] = useState(false);
+
   const [isSavingHookData, setIsSavingHookData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [copiedCaptionIndex, setCopiedCaptionIndex] = useState(null);
   const [notification, setNotification] = useState(null);
+
+  // State untuk 7 baris input scene configuration
+  const [hookDur, setHookDur] = useState('');
+  const [hookWordsScene, setHookWordsScene] = useState('');
+  const [quoteDur, setQuoteDur] = useState('');
+  const [quoteWords, setQuoteWords] = useState('');
+  const [interDur, setInterDur] = useState('');
+  const [interWords, setInterWords] = useState('');
+  const [realliveDur, setRealliveDur] = useState('');
+  const [realliveWords, setRealliveWords] = useState('');
+  const [funfactDur, setFunfactDur] = useState('');
+  const [funfactWords, setFunfactWords] = useState('');
+  const [ctaDur, setCtaDur] = useState('');
+  const [ctaWords, setCtaWords] = useState('');
 
   const [pointVideoText, setPointVideoText] = useState('');
   const [ctaText, setCtaText] = useState('');
@@ -90,7 +110,10 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
     if (quote.quote_text) {
       setHookCaption(quote.quote_text);
     }
-
+    // Set charDescResult from quote.char_desc
+    if (quote.char_desc) {
+      setCharDescResult(quote.char_desc);
+    }
     // Parse hashtag data for suggestions
     if (quote.hashtag) {
       try {
@@ -157,12 +180,61 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
   // Auto-update payload preview ketika hookWords atau hookCaption berubah
   useEffect(() => {
     setPayloadPreview(buildPayload());
-  }, [hookWords, hookCaption]);
+  }, [hookWords, hookCaption, hookDur, hookWordsScene, quoteDur, quoteWords, interDur, interWords, realliveDur, realliveWords, funfactDur, funfactWords, ctaDur, ctaWords, charDescResult]);
 
   // Initialize payload preview saat pertama kali
   useEffect(() => {
     setPayloadPreview(buildPayload());
   }, []);
+
+  // Call ImageGenerator agent untuk generate deskripsi karakter
+  const handleImageGenerator = async () => {
+  if (!charDescInput.trim()) {
+    showNotification('Mohon isi deskripsi karakter terlebih dahulu.', 'error');
+    return;
+  }
+  
+  setIsGeneratingCharDesc(true);
+  
+  try {
+    const response = await fetch('/api/librechat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        payload: charDescInput,
+        type: 'image_generator'
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Gagal memanggil ImageGenerator agent');
+    }
+    
+    const data = await response.json();
+    const charDesc = data.char_desc || '';
+    
+    setCharDescResult(charDesc);
+    
+    // Simpan ke database
+    const updated = await updateQuoteCharDesc(quote.quote_id, charDesc);
+    onUpdateQuote(updated);
+    
+    showNotification('Deskripsi karakter berhasil di-generate dan disimpan!', 'success');
+    
+  } catch (error) {
+    console.error('Error generating char desc:', error);
+    showNotification('Gagal generate deskripsi karakter. Cek console untuk detail.', 'error');
+  } finally {
+    setIsGeneratingCharDesc(false);
+  }
+  };
+
+  // Copy char desc ke clipboard
+  const handleCopyCharDesc = () => {
+    navigator.clipboard.writeText(charDescResult);
+    setCopiedCharDesc(true);
+    setTimeout(() => setCopiedCharDesc(false), 2000);
+  };
 
   // Fungsi copy untuk hook text individual
   const handleCopyHookText = (text: string, index: number) => {
@@ -369,8 +441,17 @@ Narator membacakan cerita dengan berwibawa dan tidak tergesa-gesa.${wordInstruct
 
   // Build initial payload preview
   const buildPayload = () => {
-    return `Buatkan gambar ratio 9:16 untuk Instagram reels, buatkan juga area yang nantinya diisi oleh kalimat hook dengan hiasan atau tampilan mencolok namun tetap selaras dengan gambar yang kamu buat. Gambar ini digunakan sebagai hook reels dengan tema "${quote.main_topic}". Lengkapi gambar ini dengan foto "${quote.public_figure}" sedang berpose ikonik dari tokoh tersebut, kita sebut karakter ini adalah Bomba. Masukkan kalimat "${hookWords || '....'}" di area kotak kalimat hook menggunakan font Poppins cetak tebal dengan warna yang kontras dengan gambar, agar terbaca dengan mudah. Di akhir kalimat hook, masukkan kalimat footer "by: ${quote.public_figure}" dengan menggunakan font Italiana warna dan ukuran font sama dengan kalimat hook. Buat video selama 4 detik menggunakan gambar dan kalimat hook yang sudah dibuat, narator membaca kalimat hook seperti dengan pembawaan penyiar berita FM tahun 2000an yang santai namun bersemangat`;
-  };
+  return `Buatkan video cinematic 3D pixar charakter model dengan detail informasi sebagaim berikut:
+Karakter dan Latar belakang: "${charDescResult || '...'}"
+
+Urutan schene:
+"${hookDur || '....'}" detik pertama dari gambar karakter dan latar, buatkan "area kalimat" nantinya diisi oleh kalimat hook dengan hiasan atau tampilan mencolok namun tetap selaras dengan gambar. Masukkan kalimat "${hookWordsScene || '....'}" di area kalimat dengan menggunakan font Poppins cetak tebal dengan warna yang kontras dengan gambar, agar terbaca dengan mudah. Di akhir kalimat, masukkan kalimat footer "by: ${quote.public_figure}" dengan menggunakan font Italiana, warna dan ukuran font sama dengan kalimat hook.
+"${quoteDur || '....'}" detik berikutnya, karakter mengecil jadi 20% ukuran frame dan menarik kotak "area kalimat" dengan tetap pertahankan bentuk texture "area kalimat" ini ke sudut lain, ganti "area kalimat" dengan kalimat "${quoteWords || '....'}".
+"${interDur || '....'}" detik berikutnya, ganti kalimat di "area kalimat" dengan kalimat "${interWords || '....'}", karakter dengan ukuran 20% ini sedang bergerak random di sudut frame.
+"${realliveDur || '....'}" detik berikutnya, karakter mini ini memindahkan "area kalimat" ke sudut lain frame, dan rubah kalimat menjadi "${realliveWords || '....'}"
+"${funfactDur || '....'}" detik berikutnya, karakter mini memindahkan lagi "area kalimat" ke sudut lain frame dan rubah kalimat menjadi "${funfactWords || '....'}"
+"${ctaDur || '....'}" detik terakhir, "area kalimat" hilang dengan dramatis dan karakter mini melambaikan tangan dengan tersenyum, dan ada bubble diatas karakter seperti di comic mengucapkan "${ctaWords || '....'}"`;
+};
 
   // Initialize payload preview when hookCaption changes
   const handleCaptionChange = (e) => {
@@ -788,7 +869,64 @@ Narator membacakan cerita dengan berwibawa dan tidak tergesa-gesa.${wordInstruct
               {isHookExpanded && (
                 <motion.div variants={collapseVariants} initial="hidden" animate="visible" exit="hidden">
                   <div className="flex flex-col gap-4 mb-2 border-t border-white/10 pt-4">
-                    
+                    {/* IMAGE GENERATOR - CHAR DESC */}
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                      <label className="block text-white/80 mb-1.5 text-xs">
+                        Deskripsi Karakter (Image Generator)
+                      </label>
+                      
+                      {/* Input box dengan icon tongkat sihir */}
+                      <div className="relative flex items-center gap-2">
+                        <input 
+                          type="text"
+                          value={charDescInput}
+                          onChange={(e) => setCharDescInput(e.target.value)}
+                          placeholder="Masukkan 1 kalimat deskripsi karakter..."
+                          className="flex-1 w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2.5 pr-10 text-white outline-none focus:border-purple-400/50 transition-colors text-sm"
+                        />
+                        <button 
+                          onClick={handleImageGenerator}
+                          disabled={isGeneratingCharDesc}
+                          className={`p-2.5 rounded-lg transition-colors shrink-0 ${
+                            isGeneratingCharDesc 
+                              ? 'bg-purple-900/60 border border-purple-700/50 text-white/60 cursor-not-allowed' 
+                              : 'bg-purple-500/60 hover:bg-purple-500/80 border border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                          }`}
+                          title="Generate dengan ImageGenerator"
+                        >
+                          {isGeneratingCharDesc ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : (
+                            <Wand2 size={18} />
+                          )}
+                        </button>
+                      </div>
+                      
+                      {/* Text area untuk hasil dari agent */}
+                      {charDescResult && (
+                        <div className="mt-3 relative">
+                          <textarea 
+                            value={charDescResult}
+                            onChange={(e) => setCharDescResult(e.target.value)}
+                            rows="4"
+                            placeholder="Hasil dari ImageGenerator akan muncul di sini..."
+                            className="w-full bg-black/20 border border-purple-400/30 rounded-lg px-3 py-2.5 pr-10 text-white outline-none focus:border-purple-400/50 transition-colors resize-y text-sm"
+                          />
+                          {/* Icon copy to clipboard */}
+                          <button 
+                            onClick={handleCopyCharDesc}
+                            className="absolute top-2.5 right-2.5 p-1.5 bg-white/5 hover:bg-white/20 border border-white/10 rounded-lg transition-colors"
+                            title="Copy ke clipboard"
+                          >
+                            {copiedCharDesc ? (
+                              <Check size={14} className="text-green-400" />
+                            ) : (
+                              <Copy size={14} />
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {/* Caption dengan icon tongkat sihir */}
                     <div>
                       <label className="block text-white/80 mb-1.5 text-xs">Caption (Teks visual video)</label>
@@ -889,7 +1027,152 @@ Narator membacakan cerita dengan berwibawa dan tidak tergesa-gesa.${wordInstruct
                         )}
                       </div>
                     )}
-
+                    {/* SCENE CONFIGURATION - 7 BARIS INPUT */}
+                    <div className="p-4 bg-black/30 border border-purple-500/30 rounded-xl">
+                      <label className="flex items-center gap-2 text-purple-300/80 mb-3 text-xs font-semibold uppercase tracking-wider">
+                        <Sparkles size={14} /> Scene Configuration
+                      </label>
+                      
+                      <div className="space-y-2">
+                        {/* Baris 1: hook_dur | hook_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={hookDur}
+                              onChange={(e) => setHookDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={hookWordsScene}
+                            onChange={(e) => setHookWordsScene(e.target.value)}
+                            placeholder="hook_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                        
+                        {/* Baris 2: quote_dur | quote_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={quoteDur}
+                              onChange={(e) => setQuoteDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={quoteWords}
+                            onChange={(e) => setQuoteWords(e.target.value)}
+                            placeholder="quote_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                        
+                        {/* Baris 3: inter_dur | inter_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={interDur}
+                              onChange={(e) => setInterDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={interWords}
+                            onChange={(e) => setInterWords(e.target.value)}
+                            placeholder="inter_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                        
+                        {/* Baris 4: reallive_dur | reallive_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={realliveDur}
+                              onChange={(e) => setRealliveDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={realliveWords}
+                            onChange={(e) => setRealliveWords(e.target.value)}
+                            placeholder="reallive_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                        
+                        {/* Baris 5: funfact_dur | funfact_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={funfactDur}
+                              onChange={(e) => setFunfactDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={funfactWords}
+                            onChange={(e) => setFunfactWords(e.target.value)}
+                            placeholder="funfact_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                        
+                        {/* Baris 6: cta_dur | cta_words */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-[10%] flex items-center gap-1 shrink-0">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              step="1"
+                              value={ctaDur}
+                              onChange={(e) => setCtaDur(e.target.value)}
+                              placeholder="4"
+                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
+                            />
+                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
+                          </div>
+                          <input 
+                            type="text"
+                            value={ctaWords}
+                            onChange={(e) => setCtaWords(e.target.value)}
+                            placeholder="cta_words"
+                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
                     {/* Payload Preview - editable */}
                     <div className="p-4 bg-black/40 border border-purple-500/30 rounded-xl relative flex flex-col">
                       <label className="flex items-center gap-2 text-purple-300/80 mb-2 text-xs font-semibold uppercase tracking-wider">

@@ -1,7 +1,7 @@
 // app/api/librechat/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { callLibreChat, callPromptEngineer } from '@/lib/librechat';
+import { callLibreChat, callPromptEngineer, callImageGenerator } from '@/lib/librechat';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +13,12 @@ export async function POST(request: NextRequest) {
         { error: 'Payload is required' },
         { status: 400 }
       );
+    }
+
+    // Jika type = 'image_generator', panggil ImageGenerator agent
+    if (type === 'image_generator') {
+      const charDesc = await callImageGenerator(payload);
+      return NextResponse.json({ char_desc: charDesc });
     }
 
     // Jika type = 'prompt_engineer', panggil PromptEngineer agent

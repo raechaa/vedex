@@ -61,6 +61,20 @@ export async function updateQuoteStatus(quoteId: string, status: string) {
   }
 }
 
+// UPDATE QUOTE CHAR DESC (FROM IMAGE GENERATOR AGENT)
+export async function updateQuoteCharDesc(quoteId: string, charDesc: string) {
+  try {
+    const result = await pool.query(
+      'UPDATE quote SET char_desc = $1 WHERE quote_id = $2 RETURNING *',
+      [charDesc, quoteId]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error updating quote char desc:', error);
+    throw new Error('Gagal mengupdate char desc quote.');
+  }
+}
+
 // UPDATE QUOTE HASHTAG (RAW DATA FROM AGENT) + agent_stat = "Hashtag - DONE"
 export async function updateQuoteHashtag(quoteId: string, rawAgentData: string) {
   try {

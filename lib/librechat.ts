@@ -27,9 +27,7 @@ export interface LibreChatResponse {
   }>;
 }
 
-/**
- * Call LibreChat agent untuk generate caption hook dan hashtag
- */
+// Call LibreChat agent untuk generate caption hook dan hashtag
 export async function callLibreChat(payload: string): Promise<AgentResponse> {
   const requestBody: LibreChatRequest = {
     model: config.librechat.model,
@@ -218,6 +216,47 @@ export function parseAgentResponse(content: string): AgentResponse {
   }
   
   return { hook_text: [], hashtag: [] };
+}
+
+/**
+ * Call LibreChat agent ImageGenerator untuk generate deskripsi karakter
+ */
+export async function callImageGenerator(payload: string): Promise<string> {
+  const requestBody: LibreChatRequest = {
+    model: config.librechat.imageGeneratorModel,
+    messages: [
+      {
+        role: 'user',
+        content: payload,
+      },
+    ],
+    stream: false,
+  };
+
+  try {
+    const response = await fetch(config.librechat.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.librechat.apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error response:', errorText);
+      throw new Error(`LibreChat API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: LibreChatResponse = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+
+    return content.trim();
+  } catch (error) {
+    console.error('Error calling ImageGenerator:', error);
+    throw error;
+  }
 }
 
 /**
