@@ -3,11 +3,20 @@
 'use server';
 
 import pool from './db';
+import { getSession } from './auth';
+import { callQuoteResearcher } from './librechat';
+
+async function requireSession() {
+  const user = await getSession();
+  if (!user) throw new Error('Unauthorized: silakan login terlebih dahulu.');
+  return user;
+}
 
 // ===== QUOTE ACTIONS =====
 
 // GET ALL QUOTES
 export async function getQuotes() {
+  await requireSession();
   try {
     const result = await pool.query('SELECT * FROM quote ORDER BY created_at DESC');
     return result.rows;
@@ -17,19 +26,45 @@ export async function getQuotes() {
   }
 }
 
-// GET QUOTE BY ID
-export async function getQuoteById(quoteId: string) {
-  try {
-    const result = await pool.query('SELECT * FROM quote WHERE quote_id = $1', [quoteId]);
-    return result.rows[0] || null;
-  } catch (error) {
-    console.error('Error fetching quote by ID:', error);
-    throw new Error('Gagal mengambil data quote.');
+// RUN QUOTE RESEARCH: panggil agent QuoteReseacher, simpan tiap finding sebagai 1 baris
+export async function runQuoteQuery(queryText: string) {
+  await requireSession();
+  const q = (queryText || '').trim();
+  if (!q) throw new Error('Query tidak boleh kosong.');
+
+  const result = await callQuoteResearcher(q);
+  const toText = (v: unknown) =>
+    Array.isArray(v) ? v.map(String).join('\n') : v == null ? null : String(v);
+
+  let count = 0;
+  for (const f of result.findings) {
+    try {
+      await pool.query(
+        `INSERT INTO quote (public_figure, quote_text, main_topic, interpretation, real_life_event, fun_fact, related_event, url, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Draft')`,
+        [
+          toText(f.public_figure),
+          toText(f.quote_text),
+          toText(f.main_topic),
+          toText(f.interpretation),
+          toText(f.real_life_event),
+          toText(f.fun_fact),
+          toText(f.related_event),
+          toText(f.url),
+        ]
+      );
+      count++;
+    } catch (error) {
+      console.error('Error inserting finding:', error);
+      throw new Error(`Gagal menyimpan finding ke database (tersimpan ${count}).`);
+    }
   }
+  return { count };
 }
 
 // UPDATE QUOTE
 export async function updateQuote(quoteId: string, data: any) {
+  await requireSession();
   const fields = Object.keys(data);
   const values = Object.values(data);
   
@@ -47,36 +82,9 @@ export async function updateQuote(quoteId: string, data: any) {
   }
 }
 
-// UPDATE QUOTE STATUS
-export async function updateQuoteStatus(quoteId: string, status: string) {
-  try {
-    const result = await pool.query(
-      'UPDATE quote SET status = $1 WHERE quote_id = $2 RETURNING *',
-      [status, quoteId]
-    );
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error updating quote status:', error);
-    throw new Error('Gagal mengupdate status quote.');
-  }
-}
-
-// UPDATE QUOTE CHAR DESC (FROM IMAGE GENERATOR AGENT)
-export async function updateQuoteCharDesc(quoteId: string, charDesc: string) {
-  try {
-    const result = await pool.query(
-      'UPDATE quote SET char_desc = $1 WHERE quote_id = $2 RETURNING *',
-      [charDesc, quoteId]
-    );
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error updating quote char desc:', error);
-    throw new Error('Gagal mengupdate char desc quote.');
-  }
-}
-
 // UPDATE QUOTE HASHTAG (RAW DATA FROM AGENT) + agent_stat = "Hashtag - DONE"
 export async function updateQuoteHashtag(quoteId: string, rawAgentData: string) {
+  await requireSession();
   try {
     const result = await pool.query(
       'UPDATE quote SET hashtag = $1, agent_stat = $2 WHERE quote_id = $3 RETURNING *',
@@ -89,8 +97,9 @@ export async function updateQuoteHashtag(quoteId: string, rawAgentData: string) 
   }
 }
 
-// UPDATE QUOTE HOOK TEXT (FROM PROMPT ENGINEER AGENT) + agent_stat = "Hook - DONE"
+// UPDATE QUOTE HOOK TEXT (FROM IMAGE GENERATOR AGENT) + agent_stat = "Hook - DONE"
 export async function updateQuoteHookText(quoteId: string, hookText: string) {
+  await requireSession();
   try {
     const result = await pool.query(
       'UPDATE quote SET hook_text = $1, agent_stat = $2 WHERE quote_id = $3 RETURNING *',
@@ -100,49 +109,5 @@ export async function updateQuoteHookText(quoteId: string, hookText: string) {
   } catch (error) {
     console.error('Error updating quote hook text:', error);
     throw new Error('Gagal mengupdate hook text quote.');
-  }
-}
-
-// UPDATE QUOTE MAIN TEXT (POINT VIDEO) + agent_stat = "Main Video - DONE"
-export async function updateQuoteMainText(quoteId: string, mainText: string) {
-  try {
-    const result = await pool.query(
-      'UPDATE quote SET main_text = $1, agent_stat = $2 WHERE quote_id = $3 RETURNING *',
-      [mainText, 'Main Video - DONE', quoteId]
-    );
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error updating quote main text:', error);
-    throw new Error('Gagal mengupdate main text quote.');
-  }
-}
-
-// DELETE QUOTE
-export async function deleteQuote(quoteId: string) {
-  try {
-    const result = await pool.query('DELETE FROM quote WHERE quote_id = $1 RETURNING *', [quoteId]);
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error deleting quote:', error);
-    throw new Error('Gagal menghapus quote.');
-  }
-}
-
-// GET QUOTE STATISTICS
-export async function getQuoteStats() {
-  try {
-    const result = await pool.query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'Draft') as draft_count,
-        COUNT(*) FILTER (WHERE status = 'Published') as published_count,
-        COUNT(DISTINCT public_figure) as total_figures,
-        COUNT(DISTINCT main_topic) as total_topics
-      FROM quote
-    `);
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error fetching quote stats:', error);
-    throw new Error('Gagal mengambil statistik quotes.');
   }
 }

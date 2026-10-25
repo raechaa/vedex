@@ -4,9 +4,28 @@
 
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Quote, FileQuestion, ChevronDown, ChevronRight, User, LayoutTemplate, Search, Plus, X } from 'lucide-react';
+import { Quote, FileQuestion, ChevronDown, ChevronRight, User, LayoutTemplate, Search, Plus, X, Loader2 } from 'lucide-react';
+import { runQuoteQuery } from '@/lib/actions';
 
-export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
+export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userName = '' }) {
+  const [ideaText, setIdeaText] = useState('');
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryStatus, setQueryStatus] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null);
+
+  const handleQuery = async () => {
+    if (!ideaText.trim() || queryLoading) return;
+    setQueryLoading(true);
+    setQueryStatus({ type: 'info', text: 'Querying QuoteReseacher...' });
+    try {
+      const { count } = await runQuoteQuery(ideaText);
+      setQueryStatus({ type: 'success', text: `query complete with ${count} quote(s)` });
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      setQueryStatus({ type: 'error', text: error instanceof Error ? error.message : 'Query gagal.' });
+      setQueryLoading(false);
+    }
+  };
+
   const [groupBy, setGroupBy] = useState('public_figure');
   const [expandedNodes, setExpandedNodes] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,6 +65,44 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
   }, {});
 
   return (
+    <div className="w-full max-w-4xl flex flex-col gap-4 overflow-y-auto max-h-full">
+    <motion.div
+      key="idea-box"
+      variants={fadeVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-6 text-white"
+    >
+      <h2 className="text-lg font-semibold mb-3">What's your Idea, {userName} ?</h2>
+      <input
+        id="idea-input"
+        type="text"
+        value={ideaText}
+        onChange={(e) => setIdeaText(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleQuery()}
+        disabled={queryLoading}
+        placeholder="Tulis ide atau topik quote..."
+        className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-sm text-white placeholder-white/40 outline-none focus:border-blue-400/50 transition-colors disabled:opacity-60"
+      />
+      <div className="flex items-center gap-4 mt-3">
+        <button
+          id="idea-query-button"
+          onClick={handleQuery}
+          disabled={queryLoading || !ideaText.trim()}
+          className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-blue-500/60 hover:bg-blue-500/80 border border-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {queryLoading && <Loader2 size={14} className="animate-spin" />}
+          Query
+        </button>
+        {queryStatus && (
+          <span className={`text-sm ${queryStatus.type === 'error' ? 'text-red-300' : queryStatus.type === 'success' ? 'text-green-300' : 'text-white/70'}`}>
+            {queryStatus.text}
+          </span>
+        )}
+      </div>
+    </motion.div>
+
     <motion.div 
       layoutId="main-container" 
       key="quotes" 
@@ -53,7 +110,7 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
       initial="hidden" 
       animate="visible" 
       exit="exit" 
-      className="w-full max-w-4xl bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-8 text-white"
+      className="w-full bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-8 text-white"
     >
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -208,5 +265,6 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants }) {
         </div>
       )}
     </motion.div>
+    </div>
   );
 }

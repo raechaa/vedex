@@ -4,8 +4,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, FileText, PlaySquare, Code, Wand2, X, Plus, Minus, AlertTriangle } from 'lucide-react';
-import { updateQuote, updateQuoteHashtag, updateQuoteHookText, updateQuoteMainText, updateQuoteCharDesc  } from '@/lib/actions';
+import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, Code, Wand2, X, ImageIcon, Upload, Play, Pause, Volume2 } from 'lucide-react';
+import { updateQuote, updateQuoteHashtag, updateQuoteHookText } from '@/lib/actions';
 
 // Komponen notifikasi sederhana
 const Notification = ({ message, type, onClose }) => {
@@ -39,70 +39,251 @@ const Notification = ({ message, type, onClose }) => {
   );
 };
 
+// Parse respons agent Hook Result menjadi array picture & transition.
+// Toleran terhadap markdown code fence dan format lama (non-JSON).
+const parseHookScript = (raw: string | null | undefined) => {
+  if (!raw) return { picture: [], transition: [] };
+  const cleaned = String(raw)
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+  try {
+    const parsed: any = JSON.parse(cleaned);
+    const picture = Array.isArray(parsed?.picture)
+      ? parsed.picture.map((p: any) => String(p).trim()).filter(Boolean)
+      : [];
+    const transition = Array.isArray(parsed?.transition)
+      ? parsed.transition.map((t: any) => String(t).trim()).filter(Boolean)
+      : [];
+    return { picture, transition };
+  } catch (error) {
+    console.error('Error parsing hook script:', error);
+    return { picture: [], transition: [] };
+  }
+};
+
 export default function Worksheet({ quote, onBack, onUpdateQuote }) {
-  const [copiedField, setCopiedField] = useState(null);
-  const [isHookExpanded, setIsHookExpanded] = useState(false);
-  const [isPointVideoExpanded, setIsPointVideoExpanded] = useState(false);
-  const [isCtaExpanded, setIsCtaExpanded] = useState(false);
-  
-  const [hookCaption, setHookCaption] = useState('');
-  const [hookWords, setHookWords] = useState(''); 
-  const [payloadPreview, setPayloadPreview] = useState('');
-  
-  // State untuk menyimpan hasil dari agent
-  const [generatedHookTexts, setGeneratedHookTexts] = useState<string[]>([]);
-  const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([]);
-  const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
-  const [isGeneratingHook, setIsGeneratingHook] = useState(false);
-  const [isHookWordsWarningOpen, setIsHookWordsWarningOpen] = useState(false);
+const [copiedField, setCopiedField] = useState(null);
+const [isHookExpanded, setIsHookExpanded] = useState(false);
+const [hookCaption, setHookCaption] = useState('');
+const [notification, setNotification] = useState(null);
 
-  // State untuk Image Generator (char desc)
-  const [charDescInput, setCharDescInput] = useState('');
-  const [charDescResult, setCharDescResult] = useState('');
-  const [isGeneratingCharDesc, setIsGeneratingCharDesc] = useState(false);
-  const [copiedCharDesc, setCopiedCharDesc] = useState(false);
+// Input baru untuk payload
+const [media, setMedia] = useState('');
+const [hookInput, setHookInput] = useState('');
+const [payloadPreview, setPayloadPreview] = useState('');
 
-  const [isSavingHookData, setIsSavingHookData] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [copiedCaptionIndex, setCopiedCaptionIndex] = useState(null);
-  const [notification, setNotification] = useState(null);
+// Hasil agent ImageGenerator (disimpan ke quote.hook_text)
+const [hookPictures, setHookPictures] = useState<string[]>([]);
+const [hookTransitions, setHookTransitions] = useState<string[]>([]);
+const [isGeneratingHook, setIsGeneratingHook] = useState(false);
+const [copiedHookPictureIndex, setCopiedHookPictureIndex] = useState<number | null>(null);
+const [copiedHookTransitionIndex, setCopiedHookTransitionIndex] = useState<number | null>(null);
 
-  // State untuk 7 baris input scene configuration
-  const [hookDur, setHookDur] = useState('');
-  const [hookWordsScene, setHookWordsScene] = useState('');
-  const [quoteDur, setQuoteDur] = useState('');
-  const [quoteWords, setQuoteWords] = useState('');
-  const [interDur, setInterDur] = useState('');
-  const [interWords, setInterWords] = useState('');
-  const [realliveDur, setRealliveDur] = useState('');
-  const [realliveWords, setRealliveWords] = useState('');
-  const [funfactDur, setFunfactDur] = useState('');
-  const [funfactWords, setFunfactWords] = useState('');
-  const [ctaDur, setCtaDur] = useState('');
-  const [ctaWords, setCtaWords] = useState('');
+// Suggestion (tombol wand)
+const [generatedHookTexts, setGeneratedHookTexts] = useState<string[]>([]);
+const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([]);
+const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
+const [isSavingHookData, setIsSavingHookData] = useState(false);
+const [isSaving, setIsSaving] = useState(false);
+const [copiedHookIndex, setCopiedHookIndex] = useState<number | null>(null);
+const [copiedAllHashtags, setCopiedAllHashtags] = useState(false);
 
-  const [pointVideoText, setPointVideoText] = useState('');
-  const [ctaText, setCtaText] = useState('');
-  const [isGeneratingPoint, setIsGeneratingPoint] = useState(false);
-  const [isGeneratingCTA, setIsGeneratingCTA] = useState(false);
-  const [isSavingPoint, setIsSavingPoint] = useState(false);
-  const [isSavingCTA, setIsSavingCTA] = useState(false);
-  const [copiedHookIndex, setCopiedHookIndex] = useState<number | null>(null);
-  const [copiedAllHashtags, setCopiedAllHashtags] = useState(false);
+// Generate gambar via Gemini -> S3
+const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
+const [uploadingImageIndex, setUploadingImageIndex] = useState<number | null>(null);
+const [targetUploadIndex, setTargetUploadIndex] = useState<number | null>(null);
+const fileInputRef = useRef<HTMLInputElement | null>(null);
+const [imageVersions, setImageVersions] = useState<Record<number, number>>({});
+const [missingImages, setMissingImages] = useState<Record<number, boolean>>({});
+const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
 
+const imageSrc = (index: number) =>
+  `/api/gemini-image?quote_id=${quote.quote_id}&index=${index + 1}&v=${imageVersions[index] || 0}`;
 
-  const [pointTime, setPointTime] = useState('pagi');
-  const [pointWeather, setPointWeather] = useState('terang');
-  const [pointCrowd, setPointCrowd] = useState('1-3');
-  const [pointLandscape, setPointLandscape] = useState('sawah');
-  const [narratorLines, setNarratorLines] = useState<string[]>(['']);
-  const [pointPayloadPreview, setPointPayloadPreview] = useState('');
+const handleGenerateImage = async (prompt: string, index: number) => {
+  setGeneratingImageIndex(index);
+  try {
+    const response = await fetch('/api/gemini-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quote_id: quote.quote_id, index: index + 1, prompt }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Gagal generate gambar');
+    }
+    setMissingImages(prev => ({ ...prev, [index]: false }));
+    setImageVersions(prev => ({ ...prev, [index]: Date.now() }));
+    showNotification(`Gambar #${index + 1} berhasil di-generate dan disimpan ke S3!`, 'success');
+  } catch (error) {
+    console.error('Error generating image:', error);
+    showNotification(error instanceof Error ? error.message : 'Gagal generate gambar', 'error');
+  } finally {
+    setGeneratingImageIndex(null);
+  }
+};
 
-  const [isExtendOpen, setIsExtendOpen] = useState(false);
-  const [narratorTextExtend, setNarratorTextExtend] = useState('');
-  const [extendLines, setExtendLines] = useState<string[]>(['']);
+const handleTriggerUpload = (index: number) => {
+  setTargetUploadIndex(index);
+  fileInputRef.current?.click();
+};
 
-  const [copiedResumeField, setCopiedResumeField] = useState(null);
+const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file || targetUploadIndex === null) return;
+  const index = targetUploadIndex;
+  e.target.value = '';
+
+  setUploadingImageIndex(index);
+  try {
+    const formData = new FormData();
+    formData.append('quote_id', String(quote.quote_id));
+    formData.append('index', String(index + 1));
+    formData.append('file', file);
+
+    const response = await fetch('/api/gemini-image', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Gagal upload gambar ke S3');
+    }
+
+    setMissingImages(prev => ({ ...prev, [index]: false }));
+    setImageVersions(prev => ({ ...prev, [index]: Date.now() }));
+    showNotification(`Gambar #${index + 1} berhasil diupload ke S3!`, 'success');
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    showNotification(error instanceof Error ? error.message : 'Gagal upload gambar ke S3', 'error');
+  } finally {
+    setUploadingImageIndex(null);
+    setTargetUploadIndex(null);
+  }
+};
+
+// Audio narration state (Transition Prompts)
+const [uploadingAudioIndex, setUploadingAudioIndex] = useState<number | null>(null);
+const [targetUploadAudioIndex, setTargetUploadAudioIndex] = useState<number | null>(null);
+const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+const [hasAudios, setHasAudios] = useState<Record<number, boolean>>({});
+const [audioVersions, setAudioVersions] = useState<Record<number, number>>({});
+const [playingAudioIndex, setPlayingAudioIndex] = useState<number | null>(null);
+const audioElementRef = useRef<HTMLAudioElement | null>(null);
+
+const audioSrc = (index: number) =>
+  `/api/gemini-image?quote_id=${quote.quote_id}&index=${index + 1}&media_type=audio&v=${audioVersions[index] || 0}`;
+
+// Cek file gambar & audio yang sudah tersimpan di S3 saat quote dimuat
+useEffect(() => {
+  if (!quote?.quote_id) return;
+  fetch(`/api/gemini-image?quote_id=${quote.quote_id}&action=list`)
+    .then(res => res.json())
+    .then(data => {
+      if (Array.isArray(data.audios)) {
+        const audioMap: Record<number, boolean> = {};
+        data.audios.forEach((idx: number) => {
+          audioMap[idx - 1] = true;
+        });
+        setHasAudios(audioMap);
+      }
+      if (Array.isArray(data.images)) {
+        setMissingImages(prev => {
+          const updated = { ...prev };
+          data.images.forEach((idx: number) => {
+            updated[idx - 1] = false;
+          });
+          return updated;
+        });
+      }
+    })
+    .catch(err => console.error('Error fetching asset list:', err));
+}, [quote.quote_id]);
+
+// Cleanup audio saat unmount
+useEffect(() => {
+  return () => {
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current = null;
+    }
+  };
+}, []);
+
+const handleTogglePlayAudio = (index: number) => {
+  if (playingAudioIndex === index) {
+    audioElementRef.current?.pause();
+    setPlayingAudioIndex(null);
+    return;
+  }
+
+  if (!audioElementRef.current) {
+    audioElementRef.current = new Audio();
+  }
+
+  const audio = audioElementRef.current;
+  audio.src = audioSrc(index);
+  audio.onended = () => setPlayingAudioIndex(null);
+  audio.onerror = () => {
+    setPlayingAudioIndex(null);
+    showNotification('Gagal memutar audio narator dari S3', 'error');
+  };
+
+  audio.play().then(() => {
+    setPlayingAudioIndex(index);
+  }).catch(err => {
+    console.error('Audio play error:', err);
+    setPlayingAudioIndex(null);
+    showNotification('Tidak dapat memutar audio', 'error');
+  });
+};
+
+const handleTriggerAudioUpload = (index: number) => {
+  setTargetUploadAudioIndex(index);
+  audioFileInputRef.current?.click();
+};
+
+const handleAudioFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file || targetUploadAudioIndex === null) return;
+  const index = targetUploadAudioIndex;
+  e.target.value = '';
+
+  setUploadingAudioIndex(index);
+  try {
+    const formData = new FormData();
+    formData.append('quote_id', String(quote.quote_id));
+    formData.append('index', String(index + 1));
+    formData.append('media_type', 'audio');
+    formData.append('file', file);
+
+    const response = await fetch('/api/gemini-image', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Gagal upload audio ke S3');
+    }
+
+    setHasAudios(prev => ({ ...prev, [index]: true }));
+    setAudioVersions(prev => ({ ...prev, [index]: Date.now() }));
+    showNotification(`Audio narator #${index + 1} berhasil diupload ke S3!`, 'success');
+  } catch (error) {
+    console.error('Error uploading audio:', error);
+    showNotification(error instanceof Error ? error.message : 'Gagal upload audio ke S3', 'error');
+  } finally {
+    setUploadingAudioIndex(null);
+    setTargetUploadAudioIndex(null);
+  }
+};
+
+// Menandai apakah user sudah mengedit Payload Preview secara manual.
+// Selama belum, preview tetap auto-sync dari Media/Hook Text/Quote.
+const hasEditedPayloadRef = useRef(false);
 
   // Initialize states from quote data if available
   useEffect(() => {
@@ -110,10 +291,10 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
     if (quote.quote_text) {
       setHookCaption(quote.quote_text);
     }
-    // Set charDescResult from quote.char_desc
-    if (quote.char_desc) {
-      setCharDescResult(quote.char_desc);
-    }
+    // Parse hook script (picture & transition) dari quote.hook_text
+    const hookScript = parseHookScript(quote.hook_text);
+    setHookPictures(hookScript.picture);
+    setHookTransitions(hookScript.transition);
     // Parse hashtag data for suggestions
     if (quote.hashtag) {
       try {
@@ -142,6 +323,7 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
             
             setGeneratedHookTexts(hookTexts);
             setGeneratedHashtags(hashtags);
+            
           } 
           // Handle direct format (object with hook_text and hashtag arrays)
           else {
@@ -177,64 +359,18 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
     setIsGeneratingHook(false);
   }, [quote]);
 
-  // Auto-update payload preview ketika hookWords atau hookCaption berubah
+  // Auto-update payload preview ketika media/hookInput berubah,
+  // tapi jangan menimpa editan manual user di card Payload Preview.
   useEffect(() => {
-    setPayloadPreview(buildPayload());
-  }, [hookWords, hookCaption, hookDur, hookWordsScene, quoteDur, quoteWords, interDur, interWords, realliveDur, realliveWords, funfactDur, funfactWords, ctaDur, ctaWords, charDescResult]);
+    if (!hasEditedPayloadRef.current) {
+      setPayloadPreview(buildPayload());
+    }
+  }, [media, hookInput, quote]);
 
   // Initialize payload preview saat pertama kali
   useEffect(() => {
     setPayloadPreview(buildPayload());
   }, []);
-
-  // Call ImageGenerator agent untuk generate deskripsi karakter
-  const handleImageGenerator = async () => {
-  if (!charDescInput.trim()) {
-    showNotification('Mohon isi deskripsi karakter terlebih dahulu.', 'error');
-    return;
-  }
-  
-  setIsGeneratingCharDesc(true);
-  
-  try {
-    const response = await fetch('/api/librechat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        payload: charDescInput,
-        type: 'image_generator'
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Gagal memanggil ImageGenerator agent');
-    }
-    
-    const data = await response.json();
-    const charDesc = data.char_desc || '';
-    
-    setCharDescResult(charDesc);
-    
-    // Simpan ke database
-    const updated = await updateQuoteCharDesc(quote.quote_id, charDesc);
-    onUpdateQuote(updated);
-    
-    showNotification('Deskripsi karakter berhasil di-generate dan disimpan!', 'success');
-    
-  } catch (error) {
-    console.error('Error generating char desc:', error);
-    showNotification('Gagal generate deskripsi karakter. Cek console untuk detail.', 'error');
-  } finally {
-    setIsGeneratingCharDesc(false);
-  }
-  };
-
-  // Copy char desc ke clipboard
-  const handleCopyCharDesc = () => {
-    navigator.clipboard.writeText(charDescResult);
-    setCopiedCharDesc(true);
-    setTimeout(() => setCopiedCharDesc(false), 2000);
-  };
 
   // Fungsi copy untuk hook text individual
   const handleCopyHookText = (text: string, index: number) => {
@@ -251,220 +387,21 @@ export default function Worksheet({ quote, onBack, onUpdateQuote }) {
     setTimeout(() => setCopiedAllHashtags(false), 2000);
   };
 
-  useEffect(() => {
-    setPointPayloadPreview(buildPointPayload());
-    if (quote.main_text) setPointVideoText(quote.main_text);
-    if (quote.cta_text) setCtaText(quote.cta_text);
-  }, [quote, pointTime, pointWeather, pointCrowd, pointLandscape, narratorLines, extendLines, isExtendOpen]);
-
-  const addNarratorLine = () => {
-    setNarratorLines([...narratorLines, '']);
-  };
-  
-  const updateNarratorLine = (index: number, value: string) => {
-    const newLines = [...narratorLines];
-    newLines[index] = value;
-    setNarratorLines(newLines);
-  };
-
-  const removeNarratorLine = (index: number) => {
-    if (narratorLines.length <= 1) return;
-    const newLines = narratorLines.filter((_, i) => i !== index);
-    setNarratorLines(newLines);
-  };
-
-  // Hitung total kata dari semua narratorLines
-  const totalNarratorWords = narratorLines
-    .flatMap(line => line.trim().split(/\s+/))
-    .filter(word => word.length > 0)
-    .length;
-
-  // Batas maksimal kata untuk 10 detik
-  const MAX_WORDS = 22;
-  const isOverLimit = totalNarratorWords > MAX_WORDS;
-
-  // Hitung total kata dari extendLines
-  const totalExtendWords = extendLines
-    .flatMap(line => line.trim().split(/\s+/))
-    .filter(word => word.length > 0)
-    .length;
-  
-  const isExtendOverLimit = totalExtendWords > MAX_WORDS;
-
-  // Build Point Payload Preview
-  const buildPointPayload = () => {
-    const timeMap = { pagi: 'pagi', sore: 'sore', malam: 'malam' };
-    const weatherMap = { terang: 'terang', berkabut: 'berkabut', hujan: 'hujan' };
-    const crowdMap = { '1-3': '1 sampai 3', '4-8': '4 sampai 8', '10+': '10+' };
-    const landscapeMap = { sawah: 'sawah', pantai: 'pantai', gunung: 'gunung', kota: 'kota' };
-    
-    const narratorText = narratorLines.filter(line => line.trim()).join('.. ');
-    const extendText = extendLines.filter(line => line.trim()).join('.. ');
-    
-    // Hitung total kata
-    const totalWords = narratorLines
-      .flatMap(line => line.trim().split(/\s+/))
-      .filter(word => word.length > 0)
-      .length;
-    
-    // Instruksi otomatis berdasarkan jumlah kata
-    let wordInstruction = '';
-    if (totalWords > MAX_WORDS) {
-      wordInstruction = `\nPENTING: Narasi saat ini ${totalWords} kata, terlalu panjang untuk durasi 10 detik. Ringkas dan sederhanakan menjadi maksimal ${MAX_WORDS} kata tanpa mengubah makna dan emosi utama. Prioritaskan kalimat pertama dan kedua.`;
-    } else if (totalWords > 18) {
-      wordInstruction = `\nCATATAN: Narasi ${totalWords} kata mendekati batas. Baca dengan kecepatan normal 150 kata per menit agar selesai tepat di detik ke-10.`;
-    }
-    
-    // Bagian Extend Prompt
-    let extendInstruction = '';
-    if (isExtendOpen) {
-      extendInstruction = `
-      
-EXTEND PROMPT (untuk video lanjutan 10 detik berikutnya):
-Masih dalam kegiatan yang sama, Bomba melakukan ${quote.main_topic} didukung oleh suasana video.
-Narator melanjutkan pembacaan ${extendText || '...'}.
-Gunakan fitur extend untuk melanjutkan video dari detik 10 sampai 20 dengan gaya dan suasana yang konsisten.`;
-    }
-    
-    return `Bomba beralih ke video dengan latar suasana pada ${timeMap[pointTime]} hari didaerah ${landscapeMap[pointLandscape]}. Kondisi cuaca saat itu ${weatherMap[pointWeather]}, kamera dilayar menangkap ada sekitar ${crowdMap[pointCrowd]} orang disekitar ini.
-video bergerak pelan, lembut menyisir area ${landscapeMap[pointLandscape]} itu. Bomba yang sedang ${quote.main_topic} tampak bersemangat beraksi di pojok kanan atas video.
-detik 0 sampai 1 buatkan animasi bomba melompat dari halaman sebelumnya ke pojok kanan atas video ini.
-detik 1 sampai 10 narator berbicara dengan gaya penyampaian khas penyiar radio FM disekitar tahun 2000. Narator berbicara ${narratorText || '...'}.
-text yang dibacakan narator dimunculkan kata perkata dengan format font Cormorant Garamond berukuran 18 pixel, warna font text kontrak menyesuaikan latar video.
-lokasi text ada di bagian bawah tengah video, kemunculan kata maksimal 4 kata dalam satu baris.
-Narator membacakan cerita dengan berwibawa dan tidak tergesa-gesa.${wordInstruction}${extendInstruction}`;
-  };
-  
-  // Fungsi untuk toggle Extend Prompt
-  const toggleExtendPrompt = () => {
-    setIsExtendOpen(!isExtendOpen);
-    // Reset extend lines saat toggle
-    if (!isExtendOpen) {
-      setExtendLines(['']);
-      setNarratorTextExtend('');
-    }
-  };
-  // Fungsi untuk menambah line extend
-  const addExtendLine = () => {
-    setExtendLines([...extendLines, '']);
-  };
-  // Fungsi untuk update line extend
-  const updateExtendLine = (index: number, value: string) => {
-    const newLines = [...extendLines];
-    newLines[index] = value;
-    setExtendLines(newLines);
-  // Update narratorTextExtend
-    setNarratorTextExtend(newLines.filter(line => line.trim()).join('.. '));
-  };
-  // Fungsi untuk menghapus line extend
-  const removeExtendLine = (index: number) => {
-    if (extendLines.length <= 1) return;
-    const newLines = extendLines.filter((_, i) => i !== index);
-    setExtendLines(newLines);
-    setNarratorTextExtend(newLines.filter(line => line.trim()).join('.. '));
-  };
-
-  // Fungsi generate Point Video
-  const handleGeneratePointVideo = async () => {
-    // VALIDASI: cek narasi narator tidak kosong
-    if (totalNarratorWords === 0) {
-      showNotification('Mohon isi narasi narator terlebih dahulu.', 'error');
-      return;
-    }
-    
-    setIsGeneratingPoint(true);
-    
-    try {
-      const payloadToSend = pointPayloadPreview || buildPointPayload();
-      
-      const response = await fetch('/api/librechat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          payload: payloadToSend,
-          type: 'point_video'
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Gagal memanggil PromptEngineer untuk Point Video');
-      }
-      
-      const data = await response.json();
-      const pointText = data.point_text || data.hook_text || '';
-      
-      // Update quote dengan main_text + agent_stat = "Main Video - DONE"
-      const updated = await updateQuoteMainText(quote.quote_id, pointText);
-      onUpdateQuote(updated);
-      
-      showNotification('Point video script berhasil di-generate dan disimpan!', 'success');
-      
-    } catch (error) {
-      console.error('Error generating point video:', error);
-      showNotification('Gagal generate point video. Cek console untuk detail.', 'error');
-    } finally {
-      setIsGeneratingPoint(false);
-    }
-  };
-
-  // Fungsi generate CTA
-  const handleGenerateCTA = async () => {
-    setIsGeneratingCTA(true);
-    try {
-      const response = await fetch('/api/librechat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          payload: `Buatkan script CTA (Call to Action) untuk video reels dengan tema "${quote.main_topic}". Buat ajakan yang menarik untuk follow, like, dan share.`,
-          type: 'cta'
-        }),
-      });
-      
-      if (!response.ok) throw new Error('Gagal memanggil agent');
-      
-      const data = await response.json();
-      const ctaResult = data.cta_text || data.hook_text || '';
-      
-      // Update quote di database
-      const updated = await updateQuote(quote.quote_id, { cta_text: ctaResult });
-      onUpdateQuote(updated);
-      setCtaText(ctaResult);
-      
-      showNotification('CTA script berhasil di-generate!', 'success');
-    } catch (error) {
-      console.error('Error generating CTA:', error);
-      showNotification('Gagal generate CTA.', 'error');
-    } finally {
-      setIsGeneratingCTA(false);
-    }
-  };
-
   // Build initial payload preview
   const buildPayload = () => {
-  return `Buatkan video cinematic 3D pixar charakter model dengan detail informasi sebagaim berikut:
-Karakter dan Latar belakang: "${charDescResult || '...'}"
-
-Urutan schene:
-"${hookDur || '....'}" detik pertama dari gambar karakter dan latar, buatkan "area kalimat" nantinya diisi oleh kalimat hook dengan hiasan atau tampilan mencolok namun tetap selaras dengan gambar. Masukkan kalimat "${hookWordsScene || '....'}" di area kalimat dengan menggunakan font Poppins cetak tebal dengan warna yang kontras dengan gambar, agar terbaca dengan mudah. Di akhir kalimat, masukkan kalimat footer "by: ${quote.public_figure}" dengan menggunakan font Italiana, warna dan ukuran font sama dengan kalimat hook.
-"${quoteDur || '....'}" detik berikutnya, karakter mengecil jadi 20% ukuran frame dan menarik kotak "area kalimat" dengan tetap pertahankan bentuk texture "area kalimat" ini ke sudut lain, ganti "area kalimat" dengan kalimat "${quoteWords || '....'}".
-"${interDur || '....'}" detik berikutnya, ganti kalimat di "area kalimat" dengan kalimat "${interWords || '....'}", karakter dengan ukuran 20% ini sedang bergerak random di sudut frame.
-"${realliveDur || '....'}" detik berikutnya, karakter mini ini memindahkan "area kalimat" ke sudut lain frame, dan rubah kalimat menjadi "${realliveWords || '....'}"
-"${funfactDur || '....'}" detik berikutnya, karakter mini memindahkan lagi "area kalimat" ke sudut lain frame dan rubah kalimat menjadi "${funfactWords || '....'}"
-"${ctaDur || '....'}" detik terakhir, "area kalimat" hilang dengan dramatis dan karakter mini melambaikan tangan dengan tersenyum, dan ada bubble diatas karakter seperti di comic mengucapkan "${ctaWords || '....'}"`;
-};
-
-  // Initialize payload preview when hookCaption changes
+  return [
+    `Character Name: ${quote.public_figure ?? ''}`,
+    `Media: ${media}`,
+    `Hook text: ${hookInput}`,
+    `Quote text: ${quote.quote_text ?? ''}`,
+    `Inter text: ${quote.interpretation ?? ''}`,
+    `Real life event: ${quote.real_life_event ?? ''}`,
+    `Fun Fact: ${quote.fun_fact ?? ''}`,
+  ].join('\n');
+  };
+    // Initialize payload preview when hookCaption changes
   const handleCaptionChange = (e) => {
     setHookCaption(e.target.value);
-    // Auto-update payload preview only if it matches the auto-generated pattern --> tutup dulu karena useEffect akan auto-update payload preview
-    //if (!payloadPreview || payloadPreview === buildPayload()) {
-    //  setPayloadPreview(buildPayload());
-    //}
-  };
-
-  // Handler untuk hookWords
-  const handleHookWordsChange = (e) => {
-    setHookWords(e.target.value);
     // Auto-update payload preview only if it matches the auto-generated pattern --> tutup dulu karena useEffect akan auto-update payload preview
     //if (!payloadPreview || payloadPreview === buildPayload()) {
     //  setPayloadPreview(buildPayload());
@@ -480,12 +417,6 @@ Urutan schene:
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  const handleCopyCaption = (text, index) => {
-    navigator.clipboard.writeText(text);
-    setCopiedCaptionIndex(index);
-    setTimeout(() => setCopiedCaptionIndex(null), 2000);
   };
 
   const showNotification = (message, type = 'success') => {
@@ -522,7 +453,7 @@ Urutan schene:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          payload: hookWords || hookCaption,
+          payload: hookCaption,
           type: 'suggestion' // Default type
         }),
       });
@@ -577,57 +508,60 @@ Urutan schene:
     }
   };
 
-  // Call PromptEngineer agent to generate final hook script
+  // Call ImageGenerator agent to generate hook script, lalu simpan otomatis ke database
   const handleGenerateHookScript = async () => {
-    // VALIDASI: cek hookWords terlebih dahulu
-    if (!hookWords.trim()) {
-      setIsHookWordsWarningOpen(true);
-      return;
-    }
-    
-    setIsGeneratingHook(true);
-    
-    try {
-      // Gunakan payloadPreview sebagai payload (bukan hookCaption)
-      const payloadToSend = payloadPreview || buildPayload();
-      
-      const response = await fetch('/api/librechat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          payload: payloadToSend,
-          type: 'prompt_engineer' // Panggil PromptEngineer agent
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Gagal memanggil PromptEngineer');
-      }
-      
-      const data = await response.json();
-      const hookText = data.hook_text;
-      
-      // Update quote with generated hook text (updateQuoteHookText sekarang set agent_stat = "Hook - DONE")
-      const updated = await updateQuoteHookText(quote.quote_id, hookText);
-      onUpdateQuote(updated);
-      
-      // Notifikasi sukses
-      showNotification('Hook script berhasil di-generate dan disimpan!', 'success');
-      
-    } catch (error) {
-      console.error('Error generating hook:', error);
-      showNotification('Gagal generate hook. Cek console untuk detail.', 'error');
-    } finally {
-      setIsGeneratingHook(false);
-    }
-  };
+  if (!media.trim() || !hookInput.trim()) {
+    setIsHookExpanded(true);
+    showNotification('Mohon isi Media dan Hook Text terlebih dahulu.', 'error');
+    return;
+  }
 
-  // Fungsi copy untuk Resume Script
-  const handleCopyResume = (text, field) => {
-    navigator.clipboard.writeText(text);
-    setCopiedResumeField(field);
-    setTimeout(() => setCopiedResumeField(null), 2000);
-  };
+  setIsGeneratingHook(true);
+  try {
+    const response = await fetch('/api/librechat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payload: payloadPreview || buildPayload(),
+        type: 'image_generator_model'
+      }),
+    });
+    if (!response.ok) throw new Error('Gagal memanggil ImageGenerator agent');
+
+    const data = await response.json();
+    const rawScript = data.char_desc;
+    if (!rawScript) throw new Error('Agent tidak mengembalikan hasil');
+
+    const hookScript = parseHookScript(rawScript);
+    if (hookScript.picture.length === 0 && hookScript.transition.length === 0) {
+      throw new Error('Agent tidak mengembalikan picture/transition');
+    }
+    setHookPictures(hookScript.picture);
+    setHookTransitions(hookScript.transition);
+
+    const updated = await updateQuoteHookText(quote.quote_id, rawScript);
+    onUpdateQuote(updated);
+    showNotification('Hook berhasil di-generate dan disimpan!', 'success');
+  } catch (error) {
+    console.error('Error generating hook:', error);
+    showNotification('Gagal generate hook. Cek console untuk detail.', 'error');
+  } finally {
+    setIsGeneratingHook(false);
+  }
+};
+
+const handleCopyPicturePrompt = (text: string, index: number) => {
+  navigator.clipboard.writeText(text);
+  setCopiedHookPictureIndex(index);
+  setTimeout(() => setCopiedHookPictureIndex(null), 2000);
+};
+
+const handleCopyTransitionPrompt = (text: string, index: number) => {
+  navigator.clipboard.writeText(text);
+  setCopiedHookTransitionIndex(index);
+  setTimeout(() => setCopiedHookTransitionIndex(null), 2000);
+};
+
 
   return (
     <motion.div 
@@ -650,7 +584,7 @@ Urutan schene:
 
       <div className="flex-1 flex gap-6 overflow-hidden h-full pb-4">
         
-        {/* KOLOM KIRI: Data Source & Resume */}
+        {/* KOLOM KIRI */}
         <div className="w-[35%] flex flex-col gap-4 overflow-y-auto pr-2 h-full text-sm">
           <form onSubmit={handleSaveStatus} className="bg-white/5 backdrop-blur-md border border-white/20 shadow-lg rounded-2xl p-6 flex flex-col shrink-0">
             <h2 className="text-base font-bold mb-4 flex items-center gap-2 border-b border-white/10 pb-3 text-blue-300">
@@ -756,96 +690,44 @@ Urutan schene:
             </div>
           </form>
 
-          <div className="bg-blue-900/20 backdrop-blur-md border border-blue-400/30 shadow-lg rounded-2xl p-6 flex flex-col flex-1 min-h-[300px]">
-            <h2 className="text-base font-bold mb-4 flex items-center gap-2 border-b border-white/10 pb-3 text-blue-200">
-              <FileText size={16} /> Resume Script (Ready for Video)
-            </h2>
-            <div className="flex-1 space-y-4 overflow-y-auto pr-2">
-              
-              {/* SECTION HOOK */}
-              <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-purple-300 text-xs uppercase font-sans tracking-wider font-bold">-- Hook --</span>
-                  {quote.hook_text ? (
-                    <button 
-                      onClick={() => handleCopyResume(quote.hook_text, 'hook')}
-                      className="text-white/40 hover:text-white transition-colors"
-                      title="Copy hook script"
-                    >
-                      {copiedResumeField === 'hook' ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                    </button>
-                  ) : (
-                    <span className="text-white/20 text-[10px]">Belum tersedia</span>
-                  )}
-                </div>
-                {quote.hook_text ? (
-                  <p className="text-white/80 leading-relaxed font-serif text-sm">{quote.hook_text}</p>
-                ) : (
-                  <p className="text-white/30 italic text-xs">Hook script belum di-generate...</p>
+          {/* Thumbnail gambar hasil generate (dari S3) */}
+          {hookPictures.length > 0 && (
+            <div className="bg-white/5 backdrop-blur-md border border-white/20 shadow-lg rounded-2xl p-6 flex flex-col shrink-0">
+              <h2 className="text-base font-bold mb-4 flex items-center gap-2 border-b border-white/10 pb-3 text-blue-300">
+                <ImageIcon size={16} /> Generated Images
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                {hookPictures.map((_, index) => (
+                  <div key={index} className="relative">
+                    {generatingImageIndex === index || uploadingImageIndex === index ? (
+                      <div className="w-20 h-20 rounded-lg border border-white/20 bg-black/30 flex items-center justify-center">
+                        <Loader2 size={16} className="animate-spin text-white/60" />
+                      </div>
+                    ) : !missingImages[index] ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImageIndex(index)}
+                        className="block hover:scale-105 transition-transform"
+                        title={`Lihat gambar #${index + 1}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={imageSrc(index)}
+                          alt={`Generated ${index + 1}`}
+                          onError={() => setMissingImages(prev => ({ ...prev, [index]: true }))}
+                          className="w-20 h-20 object-cover rounded-lg border border-white/20"
+                        />
+                        <span className="absolute bottom-1 left-1 text-[9px] bg-black/60 px-1 rounded">{index + 1}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                {hookPictures.every((_, i) => missingImages[i]) && generatingImageIndex === null && uploadingImageIndex === null && (
+                  <p className="text-xs text-white/40">Belum ada gambar. Upload manual atau generate gambar di Hook Result.</p>
                 )}
               </div>
-              
-              {/* SECTION POINT VIDEO */}
-              <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-blue-300 text-xs uppercase font-sans tracking-wider font-bold">-- Point Video --</span>
-                  {quote.main_text ? (
-                    <button 
-                      onClick={() => handleCopyResume(quote.main_text, 'point')}
-                      className="text-white/40 hover:text-white transition-colors"
-                      title="Copy point video script"
-                    >
-                      {copiedResumeField === 'point' ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                    </button>
-                  ) : (
-                    <span className="text-white/20 text-[10px]">Belum tersedia</span>
-                  )}
-                </div>
-                {quote.main_text ? (
-                  <p className="text-white/80 leading-relaxed font-serif text-sm">{quote.main_text}</p>
-                ) : (
-                  <p className="text-white/30 italic text-xs">Point video script belum di-generate...</p>
-                )}
-              </div>
-              
-              {/* SECTION CTA */}
-              <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-green-300 text-xs uppercase font-sans tracking-wider font-bold">-- CTA --</span>
-                  {quote.cta_text ? (
-                    <button 
-                      onClick={() => handleCopyResume(quote.cta_text, 'cta')}
-                      className="text-white/40 hover:text-white transition-colors"
-                      title="Copy CTA script"
-                    >
-                      {copiedResumeField === 'cta' ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                    </button>
-                  ) : (
-                    <span className="text-white/20 text-[10px]">Belum tersedia</span>
-                  )}
-                </div>
-                {quote.cta_text ? (
-                  <p className="text-white/80 leading-relaxed font-serif text-sm">{quote.cta_text}</p>
-                ) : (
-                  <p className="text-white/30 italic text-xs">CTA script belum di-generate...</p>
-                )}
-              </div>
-              
             </div>
-            
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <button 
-                disabled={!quote.hook_text || !quote.main_text || !quote.cta_text} 
-                className={`w-full flex justify-center items-center gap-2 px-6 py-3 rounded-lg transition-colors font-medium shadow-lg backdrop-blur-sm ${
-                  quote.hook_text && quote.main_text && quote.cta_text 
-                    ? 'bg-blue-600 hover:bg-blue-500 border border-blue-400 text-white' 
-                    : 'bg-white/5 border border-white/10 text-white/30 cursor-not-allowed'
-                }`}
-              >
-                <PlaySquare size={18} /> Generate Final Video via n8n
-              </button>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* KOLOM KANAN: Bengkel Proses */}
@@ -854,8 +736,7 @@ Urutan schene:
           <div className="bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl rounded-2xl p-6 flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold flex items-center gap-2 text-purple-300">
-                <span className="bg-purple-500/30 px-2 py-0.5 rounded text-sm">01</span> 
-                Hook Configuration (4 Detik)
+                Story Board Configuration
               </h3>
               <button 
                 onClick={() => setIsHookExpanded(!isHookExpanded)} 
@@ -869,64 +750,6 @@ Urutan schene:
               {isHookExpanded && (
                 <motion.div variants={collapseVariants} initial="hidden" animate="visible" exit="hidden">
                   <div className="flex flex-col gap-4 mb-2 border-t border-white/10 pt-4">
-                    {/* IMAGE GENERATOR - CHAR DESC */}
-                    <div className="mt-4 pt-4 border-t border-white/10">
-                      <label className="block text-white/80 mb-1.5 text-xs">
-                        Deskripsi Karakter (Image Generator)
-                      </label>
-                      
-                      {/* Input box dengan icon tongkat sihir */}
-                      <div className="relative flex items-center gap-2">
-                        <input 
-                          type="text"
-                          value={charDescInput}
-                          onChange={(e) => setCharDescInput(e.target.value)}
-                          placeholder="Masukkan 1 kalimat deskripsi karakter..."
-                          className="flex-1 w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2.5 pr-10 text-white outline-none focus:border-purple-400/50 transition-colors text-sm"
-                        />
-                        <button 
-                          onClick={handleImageGenerator}
-                          disabled={isGeneratingCharDesc}
-                          className={`p-2.5 rounded-lg transition-colors shrink-0 ${
-                            isGeneratingCharDesc 
-                              ? 'bg-purple-900/60 border border-purple-700/50 text-white/60 cursor-not-allowed' 
-                              : 'bg-purple-500/60 hover:bg-purple-500/80 border border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
-                          }`}
-                          title="Generate dengan ImageGenerator"
-                        >
-                          {isGeneratingCharDesc ? (
-                            <Loader2 size={18} className="animate-spin" />
-                          ) : (
-                            <Wand2 size={18} />
-                          )}
-                        </button>
-                      </div>
-                      
-                      {/* Text area untuk hasil dari agent */}
-                      {charDescResult && (
-                        <div className="mt-3 relative">
-                          <textarea 
-                            value={charDescResult}
-                            onChange={(e) => setCharDescResult(e.target.value)}
-                            rows="4"
-                            placeholder="Hasil dari ImageGenerator akan muncul di sini..."
-                            className="w-full bg-black/20 border border-purple-400/30 rounded-lg px-3 py-2.5 pr-10 text-white outline-none focus:border-purple-400/50 transition-colors resize-y text-sm"
-                          />
-                          {/* Icon copy to clipboard */}
-                          <button 
-                            onClick={handleCopyCharDesc}
-                            className="absolute top-2.5 right-2.5 p-1.5 bg-white/5 hover:bg-white/20 border border-white/10 rounded-lg transition-colors"
-                            title="Copy ke clipboard"
-                          >
-                            {copiedCharDesc ? (
-                              <Check size={14} className="text-green-400" />
-                            ) : (
-                              <Copy size={14} />
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
                     {/* Caption dengan icon tongkat sihir */}
                     <div>
                       <label className="block text-white/80 mb-1.5 text-xs">Caption (Teks visual video)</label>
@@ -952,26 +775,12 @@ Urutan schene:
                         </button>
                       </div>
                     </div>
-
-                    {/* HOOK WORDS */}
-                    <div>
-                      <label className="block text-white/80 mb-1.5 text-xs">Hook Words</label>
-                      <input 
-                        type="text"
-                        value={hookWords}
-                        onChange={handleHookWordsChange}
-                        placeholder="Contoh: Rahasia Sukses Steve Jobs!"
-                        className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-sm"
-                      />
-                    </div>
-
                     {/* Card Suggestion */}
                     {(generatedHookTexts.length > 0 || generatedHashtags.length > 0) && (
                       <div className="p-4 bg-black/30 border border-purple-500/30 rounded-xl">
                         <label className="flex items-center gap-2 text-purple-300/80 mb-2 text-xs font-semibold uppercase tracking-wider">
                           <Sparkles size={14} /> Suggestions
                         </label>
-                        
                         {/* Suggestion Hook Texts */}
                         {generatedHookTexts.length > 0 && (
                           <div className="mb-4">
@@ -1027,150 +836,26 @@ Urutan schene:
                         )}
                       </div>
                     )}
-                    {/* SCENE CONFIGURATION - 7 BARIS INPUT */}
-                    <div className="p-4 bg-black/30 border border-purple-500/30 rounded-xl">
-                      <label className="flex items-center gap-2 text-purple-300/80 mb-3 text-xs font-semibold uppercase tracking-wider">
-                        <Sparkles size={14} /> Scene Configuration
-                      </label>
-                      
-                      <div className="space-y-2">
-                        {/* Baris 1: hook_dur | hook_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={hookDur}
-                              onChange={(e) => setHookDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={hookWordsScene}
-                            onChange={(e) => setHookWordsScene(e.target.value)}
-                            placeholder="hook_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
-                        
-                        {/* Baris 2: quote_dur | quote_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={quoteDur}
-                              onChange={(e) => setQuoteDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={quoteWords}
-                            onChange={(e) => setQuoteWords(e.target.value)}
-                            placeholder="quote_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
-                        
-                        {/* Baris 3: inter_dur | inter_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={interDur}
-                              onChange={(e) => setInterDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={interWords}
-                            onChange={(e) => setInterWords(e.target.value)}
-                            placeholder="inter_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
-                        
-                        {/* Baris 4: reallive_dur | reallive_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={realliveDur}
-                              onChange={(e) => setRealliveDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={realliveWords}
-                            onChange={(e) => setRealliveWords(e.target.value)}
-                            placeholder="reallive_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
-                        
-                        {/* Baris 5: funfact_dur | funfact_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={funfactDur}
-                              onChange={(e) => setFunfactDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={funfactWords}
-                            onChange={(e) => setFunfactWords(e.target.value)}
-                            placeholder="funfact_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
-                        
-                        {/* Baris 6: cta_dur | cta_words */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-[10%] flex items-center gap-1 shrink-0">
-                            <input 
-                              type="number" 
-                              min="1" 
-                              step="1"
-                              value={ctaDur}
-                              onChange={(e) => setCtaDur(e.target.value)}
-                              placeholder="4"
-                              className="w-full min-w-[40px] bg-black/20 border border-white/20 rounded-lg px-1 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs text-center"
-                            />
-                            <span className="text-white/50 text-[10px] whitespace-nowrap">Detik</span>
-                          </div>
-                          <input 
-                            type="text"
-                            value={ctaWords}
-                            onChange={(e) => setCtaWords(e.target.value)}
-                            placeholder="cta_words"
-                            className="w-[80%] bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-xs"
-                          />
-                        </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-white/80 mb-1.5 text-xs">Media</label>
+                        <input
+                          type="text"
+                          value={media}
+                          onChange={(e) => setMedia(e.target.value)}
+                          placeholder="Contoh: Instagram Reels"
+                          className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-white/80 mb-1.5 text-xs">Hook Text</label>
+                        <input
+                          type="text"
+                          value={hookInput}
+                          onChange={(e) => setHookInput(e.target.value)}
+                          placeholder="Tulis hook text..."
+                          className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-purple-400/50 transition-colors text-sm"
+                        />
                       </div>
                     </div>
                     {/* Payload Preview - editable */}
@@ -1179,10 +864,13 @@ Urutan schene:
                         <Code size={14} /> Payload Preview (Editable)
                       </label>
                       <textarea 
-                        value={payloadPreview || buildPayload()} 
-                        onChange={(e) => setPayloadPreview(e.target.value)} 
-                        rows="4" 
-                        className="w-full bg-transparent text-white/80 outline-none resize-y text-xs italic min-h-[80px] border border-white/10 rounded-lg p-2 focus:border-purple-400/50 transition-colors"
+                        value={payloadPreview} 
+                        onChange={(e) => {
+                          hasEditedPayloadRef.current = true;
+                          setPayloadPreview(e.target.value);
+                        }} 
+                        rows={12} 
+                        className="w-full bg-transparent text-white/80 outline-none resize-y text-xs italic border border-white/10 rounded-lg p-2 focus:border-purple-400/50 transition-colors"
                       ></textarea>
                     </div>
                     
@@ -1190,7 +878,132 @@ Urutan schene:
                 </motion.div>
               )}
             </AnimatePresence>
-            
+            {(isGeneratingHook || hookPictures.length > 0 || hookTransitions.length > 0) && (
+              <div className="mt-4 p-4 bg-black/40 border border-purple-500/30 rounded-xl flex flex-col">
+                <label className="flex items-center gap-2 text-purple-300/80 mb-2 text-xs font-semibold uppercase tracking-wider">
+                  <Sparkles size={14} /> Hook Result
+                </label>
+                {isGeneratingHook ? (
+                  <div className="flex items-center gap-2 text-white/60 text-xs py-4">
+                    <Loader2 size={14} className="animate-spin" /> Menunggu respon agent...
+                  </div>
+                ) : (
+                  <>
+                    {hookPictures.length > 0 && (
+                      <div className="mb-4">
+                        <label className="text-purple-300/60 text-xs mb-2 block">Picture Prompts ({hookPictures.length})</label>
+                        <div className="space-y-2">
+                          {hookPictures.map((text, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="text-purple-300 text-xs font-bold w-4 text-right shrink-0">{index + 1}.</span>
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  value={text}
+                                  readOnly
+                                  className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 pr-24 text-white/90 text-xs outline-none focus:border-purple-400/50 transition-colors cursor-default"
+                                />
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                  {/* 1. Generate Image (Gemini) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGenerateImage(text, index)}
+                                    disabled={generatingImageIndex !== null || uploadingImageIndex !== null}
+                                    className="text-purple-300/70 hover:text-purple-100 transition-colors disabled:opacity-40 p-1"
+                                    title="Generate image dengan Gemini"
+                                  >
+                                    {generatingImageIndex === index ? <Loader2 size={14} className="animate-spin" /> : <ImageIcon size={14} />}
+                                  </button>
+
+                                  {/* 2. Upload Manual ke S3 (DIANTARA generate image dan copy clipboard) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTriggerUpload(index)}
+                                    disabled={generatingImageIndex !== null || uploadingImageIndex !== null}
+                                    className="text-blue-300/70 hover:text-blue-100 transition-colors disabled:opacity-40 p-1"
+                                    title="Upload image manual ke S3 (quote-<id>-<index>.png)"
+                                  >
+                                    {uploadingImageIndex === index ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                  </button>
+
+                                  {/* 3. Copy Clipboard */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyPicturePrompt(text, index)}
+                                    className="text-white/40 hover:text-white transition-colors p-1"
+                                    title="Copy picture prompt"
+                                  >
+                                    {copiedHookPictureIndex === index ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {hookTransitions.length > 0 && (
+                      <div>
+                        <label className="text-purple-300/60 text-xs mb-2 block">Transition Prompts ({hookTransitions.length})</label>
+                        <div className="space-y-2">
+                          {hookTransitions.map((text, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="text-purple-300 text-xs font-bold w-4 text-right shrink-0">{index + 1}.</span>
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  value={text}
+                                  readOnly
+                                  className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 pr-20 text-white/90 text-xs outline-none focus:border-purple-400/50 transition-colors cursor-default"
+                                />
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                  {/* 1. Play / Pause preview audio dari S3 (jika sudah diupload) */}
+                                  {hasAudios[index] && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTogglePlayAudio(index)}
+                                      className={`p-1 rounded transition-colors ${
+                                        playingAudioIndex === index
+                                          ? 'text-green-400 hover:text-green-300 animate-pulse'
+                                          : 'text-purple-300 hover:text-purple-100'
+                                      }`}
+                                      title={playingAudioIndex === index ? 'Pause audio narator' : 'Putar audio narator dari S3'}
+                                    >
+                                      {playingAudioIndex === index ? <Pause size={14} /> : <Play size={14} />}
+                                    </button>
+                                  )}
+
+                                  {/* 2. Upload audio manual ke S3 (SEBELUM copy to clipboard) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTriggerAudioUpload(index)}
+                                    disabled={uploadingAudioIndex !== null}
+                                    className="text-blue-300/70 hover:text-blue-100 transition-colors disabled:opacity-40 p-1"
+                                    title="Upload file suara narator ke S3 (menimpa audio sebelumnya)"
+                                  >
+                                    {uploadingAudioIndex === index ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                  </button>
+
+                                  {/* 3. Copy Clipboard */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyTransitionPrompt(text, index)}
+                                    className="text-white/40 hover:text-white transition-colors p-1"
+                                    title="Copy transition prompt"
+                                  >
+                                    {copiedHookTransitionIndex === index ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex justify-end pt-4 border-t border-white/10 mt-2">
               <button 
                 onClick={handleGenerateHookScript}
@@ -1209,415 +1022,51 @@ Urutan schene:
               </button>
             </div>
           </div>
-
-          {/* CARD 2: POINT VIDEO */}
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl rounded-2xl p-6 flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-blue-300">
-                <span className="bg-blue-500/30 px-2 py-0.5 rounded text-sm">02</span> 
-                Point Configuration (10 Detik)
-              </h3>
-              <button 
-                onClick={() => setIsPointVideoExpanded(!isPointVideoExpanded)} 
-                className="text-white/50 hover:text-white transition-colors p-1 bg-white/5 rounded-full"
-              >
-                {isPointVideoExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </button>
-            </div>
-            
-            <AnimatePresence>
-              {isPointVideoExpanded && (
-                <motion.div variants={collapseVariants} initial="hidden" animate="visible" exit="hidden">
-                  <div className="pt-4 mt-4 border-t border-white/10 flex flex-col gap-4">
-                    
-                    {/* Line 1: Input read-only */}
-                    <div>
-                      <input 
-                        type="text"
-                        readOnly
-                        value="Buatkan video dengan aspek ratio 9:16 untuk Instagram Reels, detail latar video sebagai berikut"
-                        className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white/80 outline-none cursor-not-allowed text-xs"
-                      />
-                    </div>
-                    
-										{/* Line 2: Dropdown waktu & cuaca */}
-										<div className="grid grid-cols-2 gap-3">
-										<div>
-											<label className="block text-white/60 mb-1 text-xs uppercase tracking-wider">Waktu</label>
-											<select 
-											value={pointTime}
-											onChange={(e) => setPointTime(e.target.value)}  // ← SIMPLIFIKASI
-											className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white outline-none appearance-none focus:border-blue-400/50 transition-colors text-xs"
-											>
-											<option value="pagi" className="bg-gray-900 text-white">Pagi</option>
-											<option value="sore" className="bg-gray-900 text-white">Sore</option>
-											<option value="malam" className="bg-gray-900 text-white">Malam</option>
-											</select>
-										</div>
-										<div>
-											<label className="block text-white/60 mb-1 text-xs uppercase tracking-wider">Cuaca</label>
-											<select 
-											value={pointWeather}
-											onChange={(e) => setPointWeather(e.target.value)}  // ← SIMPLIFIKASI
-											className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white outline-none appearance-none focus:border-blue-400/50 transition-colors text-xs"
-											>
-											<option value="terang" className="bg-gray-900 text-white">Terang</option>
-											<option value="berkabut" className="bg-gray-900 text-white">Berkabut</option>
-											<option value="hujan" className="bg-gray-900 text-white">Hujan</option>
-											</select>
-										</div>
-										</div>
-                    
-                   	{/* Line 3: Dropdown keramaian & landscape */}
-							        <div className="grid grid-cols-2 gap-3">
-								          <div>
-									          <label className="block text-white/60 mb-1 text-xs uppercase tracking-wider">Keramaian</label>
-									          <select 
-									          value={pointCrowd}
-									        onChange={(e) => setPointCrowd(e.target.value)}  // ← SIMPLIFIKASI
-									        className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white outline-none appearance-none focus:border-blue-400/50 transition-colors text-xs"
-									      >
-									        <option value="1-3" className="bg-gray-900 text-white">1 s/d 3 orang</option>
-									        <option value="4-8" className="bg-gray-900 text-white">4 s/d 8 orang</option>
-									        <option value="10+" className="bg-gray-900 text-white">10++</option>
-									    </select>
-								          </div>
-								          <div>
-									        <label className="block text-white/60 mb-1 text-xs uppercase tracking-wider">Landscape</label>
-									    <select 
-									        value={pointLandscape}
-									        onChange={(e) => setPointLandscape(e.target.value)}  // ← SIMPLIFIKASI
-									        className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white outline-none appearance-none focus:border-blue-400/50 transition-colors text-xs"
-									      >
-									        <option value="sawah" className="bg-gray-900 text-white">Sawah</option>
-									        <option value="pantai" className="bg-gray-900 text-white">Pantai</option>
-									        <option value="gunung" className="bg-gray-900 text-white">Gunung</option>
-									            <option value="kota" className="bg-gray-900 text-white">Kota</option>
-									        </select>
-								      </div>
-							      </div>
-                    
-                    {/* Line 4+: Narrator input boxes */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-white/60 text-xs uppercase tracking-wider">Narator</label>
-                        {/* COUNTER KATA */}
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
-                            isOverLimit 
-                              ? 'bg-red-500/20 text-red-300 border-red-400/40' 
-                              : totalNarratorWords > 18 
-                                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/40' 
-                                : 'bg-green-500/20 text-green-300 border-green-400/40'
-                          }`}>
-                            {totalNarratorWords}/{MAX_WORDS} kata
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* WARNING jika melebihi batas */}
-                      {isOverLimit && (
-                        <div className="mb-2 flex items-start gap-2 bg-red-500/10 border border-red-400/30 rounded-lg px-3 py-2">
-                          <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
-                          <p className="text-red-300 text-[11px] leading-relaxed">
-                            Narasi terlalu panjang ({totalNarratorWords} kata) untuk durasi 10 detik. 
-                            Maksimal {MAX_WORDS} kata agar selesai dibaca tepat waktu. 
-                            AI akan otomatis meringkas saat generate.
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* WARNING jika mendekati batas */}
-                      {!isOverLimit && totalNarratorWords > 18 && (
-                        <div className="mb-2 flex items-start gap-2 bg-yellow-500/10 border border-yellow-400/30 rounded-lg px-3 py-2">
-                          <AlertTriangle size={14} className="text-yellow-400 shrink-0 mt-0.5" />
-                          <p className="text-yellow-300 text-[11px] leading-relaxed">
-                            Narasi mendekati batas ({totalNarratorWords}/{MAX_WORDS} kata). 
-                            Disarankan menambah 1-2 detik durasi atau meringkas kalimat.
-                          </p>
-                        </div>
-                      )}
-                      
-                      <div className="space-y-2">
-                        {narratorLines.map((line, index) => (
-                          <div key={index} className="relative flex items-center gap-2">
-                            <input 
-                              type="text"
-                              value={line}
-                              onChange={(e) => updateNarratorLine(index, e.target.value)}
-                              placeholder={`Kata-kata narator ${index + 1}...`}
-                              className={`flex-1 w-full bg-black/20 border rounded-lg px-3 py-2 text-white outline-none transition-colors text-xs ${
-                                isOverLimit 
-                                  ? 'border-red-400/40 focus:border-red-400/60' 
-                                  : 'border-white/20 focus:border-blue-400/50'
-                              }`}
-                            />
-                            {index === narratorLines.length - 1 ? (
-                              <button 
-                                onClick={addNarratorLine}
-                                className="p-2 bg-blue-500/40 hover:bg-blue-500/70 border border-blue-400/50 rounded-lg text-white transition-colors shrink-0"
-                                title="Tambahkan line narator"
-                              >
-                                <Plus size={16} />
-                              </button>
-                            ) : (
-                              <button 
-                                onClick={() => removeNarratorLine(index)}
-                                className="p-2 bg-red-500/30 hover:bg-red-500/50 border border-red-400/40 rounded-lg text-red-200 transition-colors shrink-0"
-                                title="Hapus line narator"
-                              >
-                                <Minus size={16} />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Payload Preview Point */}
-                    <div className="p-4 bg-black/40 border border-blue-500/30 rounded-xl relative flex flex-col">
-                      <label className="flex items-center gap-2 text-blue-300/80 mb-2 text-xs font-semibold uppercase tracking-wider">
-                        <Code size={14} /> Payload Preview (Editable)
-                      </label>
-                      <textarea 
-                        value={pointPayloadPreview || buildPointPayload()} 
-                        onChange={(e) => setPointPayloadPreview(e.target.value)} 
-                        rows="8" 
-                        className="w-full bg-transparent text-white/80 outline-none resize-y text-xs italic min-h-[150px] border border-white/10 rounded-lg p-2 focus:border-blue-400/50 transition-colors"
-                      ></textarea>
-                    </div>
-
-                    {/* BUTTON EXTEND PROMPT */}
-                    <div className="flex justify-end">
-                      <button 
-                        onClick={toggleExtendPrompt}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-xs font-medium border ${
-                          isExtendOpen 
-                            ? 'bg-blue-500/30 border-blue-400/50 text-blue-200' 
-                            : 'bg-white/5 border-white/20 text-white/70 hover:bg-white/15'
-                        }`}
-                      >
-                        {isExtendOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        {isExtendOpen ? 'Tutup Extend Prompt' : 'Extend Prompt'}
-                      </button>
-                    </div>
-                    {/* EXTEND PROMPT SECTION */}
-                    <AnimatePresence>
-                      {isExtendOpen && (
-                        <motion.div 
-                          initial={{ height: 0, opacity: 0 }} 
-                          animate={{ height: 'auto', opacity: 1 }} 
-                          exit={{ height: 0, opacity: 0 }} 
-                          className="overflow-hidden"
-                        >
-                          <div className="p-4 bg-blue-900/20 border border-blue-400/30 rounded-xl flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                              <label className="flex items-center gap-2 text-blue-300/80 text-xs font-semibold uppercase tracking-wider">
-                                <Sparkles size={14} /> Extend Prompt (Video 2 - 10 Detik)
-                              </label>
-                              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
-                                isExtendOverLimit 
-                                  ? 'bg-red-500/20 text-red-300 border-red-400/40' 
-                                  : totalExtendWords > 18 
-                                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/40' 
-                                    : 'bg-green-500/20 text-green-300 border-green-400/40'
-                              }`}>
-                                {totalExtendWords}/{MAX_WORDS} kata
-                              </span>
-                            </div>
-                            
-                            {/* Info bridging */}
-                            <div className="bg-black/20 border border-blue-400/20 rounded-lg px-3 py-2 text-[11px] text-blue-200/80 leading-relaxed">
-                              <p className="font-semibold mb-1">Bridging Text:</p>
-                              <p className="italic">"Masih dalam kegiatan yang sama, Bomba melakukan {quote.main_topic} didukung oleh suasana video."</p>
-                            </div>
-                            
-                            {/* Warning jika over limit */}
-                            {isExtendOverLimit && (
-                              <div className="flex items-start gap-2 bg-red-500/10 border border-red-400/30 rounded-lg px-3 py-2">
-                                <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
-                                <p className="text-red-300 text-[11px] leading-relaxed">
-                                  Narasi extend terlalu panjang ({totalExtendWords} kata) untuk durasi 10 detik. 
-                                  Maksimal {MAX_WORDS} kata agar selesai dibaca tepat waktu.
-                                </p>
-                              </div>
-                            )}
-                            
-                            {/* Input extend lines */}
-                            <div className="space-y-2">
-                              {extendLines.map((line, index) => (
-                                <div key={index} className="relative flex items-center gap-2">
-                                  <input 
-                                    type="text"
-                                    value={line}
-                                    onChange={(e) => updateExtendLine(index, e.target.value)}
-                                    placeholder={`Kata-kata narator extend ${index + 1}...`}
-                                    className={`flex-1 w-full bg-black/20 border rounded-lg px-3 py-2 text-white outline-none transition-colors text-xs ${
-                                      isExtendOverLimit 
-                                        ? 'border-red-400/40 focus:border-red-400/60' 
-                                        : 'border-white/20 focus:border-blue-400/50'
-                                    }`}
-                                  />
-                                  {index === extendLines.length - 1 ? (
-                                    <button 
-                                      onClick={addExtendLine}
-                                      className="p-2 bg-blue-500/40 hover:bg-blue-500/70 border border-blue-400/50 rounded-lg text-white transition-colors shrink-0"
-                                      title="Tambahkan line extend"
-                                    >
-                                      <Plus size={16} />
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      onClick={() => removeExtendLine(index)}
-                                      className="p-2 bg-red-500/30 hover:bg-red-500/50 border border-red-400/40 rounded-lg text-red-200 transition-colors shrink-0"
-                                      title="Hapus line extend"
-                                    >
-                                      <Minus size={16} />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                            
-                            {/* Preview extend text */}
-                            <div className="bg-black/20 border border-white/10 rounded-lg px-3 py-2">
-                              <p className="text-[10px] text-blue-300/60 uppercase tracking-wider mb-1 font-semibold">Preview Extend:</p>
-                              <p className="text-[11px] text-white/70 italic leading-relaxed">
-                                "Masih dalam kegiatan yang sama, Bomba melakukan {quote.main_topic} didukung oleh suasana video. Narator melanjutkan pembacaan {narratorTextExtend || '...'}."
-                              </p>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            
-            {/* Button Generate Point Video */}
-            <div className="flex justify-end pt-4 border-t border-white/10 mt-4">
-              <button 
-                onClick={handleGeneratePointVideo}
-                disabled={isGeneratingPoint}
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg transition-colors font-medium shadow-lg backdrop-blur-sm ${
-                  isGeneratingPoint 
-                    ? 'bg-blue-900/60 border border-blue-700/50 text-white/60 cursor-not-allowed' 
-                    : 'bg-blue-500/60 hover:bg-blue-500/80 border border-blue-400/50 shadow-[0_0_15px_rgba(59,130,246,0.4)]'
-                }`}
-              >
-                {isGeneratingPoint ? (
-                  <><Loader2 size={16} className="animate-spin" /> Generating Point Video...</>
-                ) : (
-                  <><Sparkles size={16} /> Generate Point Video Script</>
-                )}
-              </button>
-            </div>
-          </div>
-
-					{/* CARD 3: CTA */}
-					<div className="bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl rounded-2xl p-6 flex flex-col">
-					<div className="flex justify-between items-center mb-4">
-						<h3 className="text-lg font-bold flex items-center gap-2 text-green-300">
-						<span className="bg-green-500/30 px-2 py-0.5 rounded text-sm">03</span> 
-						Call to Action (4 Detik)
-						</h3>
-						<button 
-						onClick={() => setIsCtaExpanded(!isCtaExpanded)} 
-						className="text-white/50 hover:text-white transition-colors p-1 bg-white/5 rounded-full"
-						>
-						{isCtaExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-						</button>
-					</div>
-					
-					<AnimatePresence>
-						{isCtaExpanded && (
-						<motion.div variants={collapseVariants} initial="hidden" animate="visible" exit="hidden">
-							<div className="pt-4 mt-4 border-t border-white/10 flex flex-col gap-4">
-							{/* Textarea untuk CTA */}
-							<div>
-								<label className="block text-white/80 mb-1.5 text-xs">Script CTA</label>
-								<textarea 
-								value={ctaText}
-								onChange={(e) => setCtaText(e.target.value)}
-								rows="3" 
-								placeholder="Tulis atau generate script CTA di sini..."
-								className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-green-400/50 transition-colors resize-y text-sm"
-								></textarea>
-							</div>
-							
-							{/* Tombol Generate */}
-							<div className="flex justify-end">
-								<button 
-								onClick={handleGenerateCTA}
-								disabled={isGeneratingCTA}
-								className={`flex items-center gap-2 px-6 py-2.5 rounded-lg transition-colors font-medium shadow-lg backdrop-blur-sm ${
-									isGeneratingCTA 
-									? 'bg-green-900/60 border border-green-700/50 text-white/60 cursor-not-allowed' 
-									: 'bg-green-500/60 hover:bg-green-500/80 border border-green-400/50 shadow-[0_0_15px_rgba(34,197,94,0.4)]'
-								}`}
-								>
-								{isGeneratingCTA ? (
-									<><Loader2 size={16} className="animate-spin" /> Generating...</>
-								) : (
-									<><Sparkles size={16} /> Generate CTA Script</>
-								)}
-								</button>
-							</div>
-							</div>
-						</motion.div>
-						)}
-					</AnimatePresence>
-
-          {/* MODAL PERINGATAN HOOK WORDS */}
-          <AnimatePresence>
-            {isHookWordsWarningOpen && (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            >
-              <motion.div 
-              initial={{ scale: 0.9, y: 20 }} 
-              animate={{ scale: 1, y: 0 }} 
-              exit={{ scale: 0.9, y: 20 }} 
-              className="relative w-full max-w-sm bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 text-center text-white"
-              >
-              <button 
-                onClick={() => setIsHookWordsWarningOpen(false)} 
-                className="absolute top-4 right-4 p-2 bg-white/5 hover:bg-white/20 border border-white/10 rounded-full transition-colors"
-              >
-                <X size={18} />
-              </button>
-					
-					    <div className="flex justify-center mb-4">
-						    <div className="p-3 bg-yellow-500/20 border border-yellow-400/30 rounded-full">
-					    	<AlertTriangle size={32} className="text-yellow-300" />
-					    	</div>
-					    </div>
-					
-					    <h2 className="text-xl font-bold mb-2">Hook Words Kosong</h2>
-					    <p className="text-white/70 text-sm mb-6">
-					    	Mohon isi input <span className="font-semibold text-yellow-300">Hook Words</span> terlebih dahulu sebelum generate hook script.
-					    </p>
-					
-					    <div className="flex justify-center gap-3">
-					    	<button 
-					    	onClick={() => setIsHookWordsWarningOpen(false)} 
-					    	className="px-5 py-2.5 bg-yellow-500/40 hover:bg-yellow-500/60 border border-yellow-400/50 rounded-lg transition-colors text-sm font-medium"
-					    	>
-					    	Mengerti
-					    	</button>
-					    </div>
-					    </motion.div>
-				    </motion.div>
-				    )}
-			    </AnimatePresence>
-
-					</div>
         </div>
       </div>
+
+      {/* Hidden file input for manual image upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Hidden file input for manual audio upload */}
+      <input
+        type="file"
+        ref={audioFileInputRef}
+        accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac,.webm"
+        className="hidden"
+        onChange={handleAudioFileChange}
+      />
+
+      {/* IMAGE POPUP */}
+      <AnimatePresence>
+        {previewImageIndex !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setPreviewImageIndex(null)}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
+          >
+            <div className="relative max-w-3xl max-h-full" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setPreviewImageIndex(null)}
+                className="absolute -top-3 -right-3 bg-white/20 hover:bg-white/40 rounded-full p-1.5"
+              >
+                <X size={16} />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageSrc(previewImageIndex)} alt={`Generated ${previewImageIndex + 1}`} className="max-h-[85vh] rounded-xl border border-white/20 shadow-2xl" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* NOTIFICATION */}
       <AnimatePresence>

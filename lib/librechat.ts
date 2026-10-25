@@ -75,47 +75,6 @@ export async function callLibreChat(payload: string): Promise<AgentResponse> {
 }
 
 /**
- * Call LibreChat agent PromptEngineer untuk generate hook script
- */
-export async function callPromptEngineer(payload: string): Promise<string> {
-  const requestBody: LibreChatRequest = {
-    model: config.librechat.promptEngineerModel,
-    messages: [
-      {
-        role: 'user',
-        content: payload,
-      },
-    ],
-    stream: false,
-  };
-
-  try {
-    const response = await fetch(config.librechat.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.librechat.apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error response:', errorText);
-      throw new Error(`LibreChat API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data: LibreChatResponse = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-
-    return content.trim();
-  } catch (error) {
-    console.error('Error calling PromptEngineer:', error);
-    throw error;
-  }
-}
-
-/**
  * Parse response JSON dari agent menjadi objek AgentResponse.
  * Menangani berbagai format response yang mungkin.
  */
@@ -257,6 +216,70 @@ export async function callImageGenerator(payload: string): Promise<string> {
     console.error('Error calling ImageGenerator:', error);
     throw error;
   }
+}
+
+export interface QuoteFinding {
+  public_figure?: string[] | string;
+  quote_text?: string[] | string;
+  main_topic?: string[] | string;
+  interpretation?: string[] | string;
+  real_life_event?: string[] | string;
+  fun_fact?: string[] | string;
+  related_event?: string[] | string;
+  url?: string[] | string;
+}
+
+export interface QuoteResearchResponse {
+  query: string;
+  findings: QuoteFinding[];
+}
+
+/**
+ * Call LibreChat agent "QuoteReseacher" dan parse JSON { query, findings[] }
+ */
+export async function callQuoteResearcher(query: string): Promise<QuoteResearchResponse> {
+  const model = config.librechat.quoteResearcherModel;
+  if (!model) {
+    throw new Error('LIBRECHAT_QUOTE_RESEARCHER_MODEL belum diset di .env.local');
+  }
+
+  const response = await fetch(config.librechat.apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.librechat.apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: query }],
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error('Error response:', await response.text());
+    throw new Error(`LibreChat API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const content: string = data.choices?.[0]?.message?.content || '';
+  const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // fallback: ambil blok JSON terluar
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end <= start) throw new Error('Response agent bukan JSON valid.');
+    parsed = JSON.parse(cleaned.slice(start, end + 1));
+  }
+
+  return {
+    query: parsed.query ?? query,
+    findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+  };
 }
 
 /**

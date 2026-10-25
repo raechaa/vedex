@@ -6,12 +6,14 @@ import { Loader2 } from 'lucide-react';
 
 // Import server actions
 import { getQuotes } from '@/lib/actions';
+import { loginAction, logoutAction, getCurrentUser } from '@/lib/auth-actions';
 
 // Import components
 import Header from '@/components/layout/Header';
 import LoginView from '@/components/views/LoginView';
 import QuoteList from '@/components/views/QuoteList';
 import Worksheet from '@/components/views/Worksheet';
+import UserManagement from '@/components/views/UserManagement';
 import MaintenanceModal from '@/components/modals/MaintenanceModal';
 import ProfileModal from '@/components/modals/ProfileModal';
 
@@ -21,20 +23,22 @@ export default function App() {
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [userQuotes, setUserQuotes] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // MODAL STATE
   const [isMaintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
   const [isProfileModalOpen, setProfileModalOpen] = useState(false);
 
-  // --- LOCAL STORAGE INIT (Auto Login) ---
+  // --- SESSION INIT (cek cookie session di server) ---
   useEffect(() => {
-    const sessionActive = localStorage.getItem('bengkel_session');
-    
-    if (sessionActive === 'true') {
-      loadQuotes();
-    } else {
-      setView('login');
-    }
+    getCurrentUser().then((user) => {
+      if (user) {
+        setCurrentUser(user);
+        loadQuotes();
+      } else {
+        setView('login');
+      }
+    });
   }, []);
 
   // LOAD QUOTES
@@ -54,18 +58,22 @@ export default function App() {
   };
 
   // LOGIC ACTIONS
-  const handleLogin = (e) => { 
-    e.preventDefault(); 
+  // Mengembalikan pesan error (string) bila gagal, atau null bila berhasil
+  const handleLogin = async (email, password) => { 
+    const result = await loginAction(email, password);
+    if (!result.success) return result.error;
+    setCurrentUser(result.user);
+
     setView('loading');
-    
-    setTimeout(() => {
-      localStorage.setItem('bengkel_session', 'true');
-      loadQuotes();
-    }, 1000);
+    await loadQuotes();
+    return null;
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('bengkel_session');
+  const handleLogout = async () => {
+    await logoutAction();
+    setUserQuotes([]);
+    setSelectedQuote(null);
+    setCurrentUser(null);
     setView('login');
   };
 
@@ -96,6 +104,8 @@ export default function App() {
         onNavigateHome={() => setView('quotes')}
         onMaintenanceClick={() => setMaintenanceModalOpen(true)}
         onProfileClick={() => setProfileModalOpen(true)}
+        isAdmin={currentUser?.role === 'admin'}
+        onUsersClick={() => setView('users')}
         onLogout={handleLogout}
       />
 
@@ -116,9 +126,14 @@ export default function App() {
           {view === 'quotes' && (
             <QuoteList 
               quotes={userQuotes} 
+              userName={currentUser?.name || ''}
               onSelectQuote={(quote) => { setSelectedQuote(quote); setView('worksheet'); }} 
               fadeVariants={fadeVariants} 
             />
+          )}
+
+          {view === 'users' && currentUser?.role === 'admin' && (
+            <UserManagement currentUserId={currentUser.id} onBack={() => setView('quotes')} fadeVariants={fadeVariants} />
           )}
 
           {view === 'worksheet' && selectedQuote && (
@@ -134,7 +149,7 @@ export default function App() {
 
       {/* MODALS */}
       <MaintenanceModal isOpen={isMaintenanceModalOpen} onClose={() => setMaintenanceModalOpen(false)} />
-      <ProfileModal isOpen={isProfileModalOpen} onClose={() => setProfileModalOpen(false)} />
+      <ProfileModal isOpen={isProfileModalOpen} onClose={() => setProfileModalOpen(false)} user={currentUser} onUserUpdated={setCurrentUser} />
       
     </div>
   );

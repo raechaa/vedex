@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Settings, LogOut, Info, Wrench, AlertTriangle } from 'lucide-react';
+import { User, Settings, LogOut, Info, Wrench, AlertTriangle, Users } from 'lucide-react';
 
-export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick, onProfileClick, onLogout }) {
+export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick, onProfileClick, onLogout, isAdmin, onUsersClick }) {
   const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isLogoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
@@ -39,6 +39,9 @@ export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick,
                 {isProfileDropdownOpen && (
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-3 w-48 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col">
                     <button onClick={() => { onProfileClick(); setProfileDropdownOpen(false); }} className="flex items-center gap-3 px-4 py-3 hover:bg-white/20 transition-colors text-left text-sm"><Settings size={16} /> Profile Settings</button>
+                    {isAdmin && (
+                      <button onClick={() => { onUsersClick(); setProfileDropdownOpen(false); }} className="flex items-center gap-3 px-4 py-3 hover:bg-white/20 transition-colors text-left text-sm"><Users size={16} /> Manajemen User</button>
+                    )}
                     <div className="h-px bg-white/20 w-full"></div>
                     <button onClick={handleLogoutClick} className="flex items-center gap-3 px-4 py-3 hover:bg-red-500/30 text-red-100 transition-colors text-left text-sm"><LogOut size={16} /> Logout</button>
                   </motion.div>

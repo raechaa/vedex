@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginView({ onLogin, fadeVariants }) {
-  const [email, setEmail] = useState('admin@demo.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validasi sederhana
@@ -28,7 +29,12 @@ export default function LoginView({ onLogin, fadeVariants }) {
     }
     
     setError('');
-    onLogin(e);
+    setSubmitting(true);
+    const loginError = await onLogin(email.trim(), password);
+    if (loginError) {
+      setError(loginError);
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -75,8 +81,8 @@ export default function LoginView({ onLogin, fadeVariants }) {
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <button type="submit" className="mt-2 md:mt-4 w-full bg-white/10 hover:bg-white/20 border border-white/20 transition-colors py-3 rounded-lg font-medium shadow-lg backdrop-blur-sm text-sm">
-          Login
+        <button type="submit" disabled={submitting} className="mt-2 md:mt-4 w-full bg-white/10 hover:bg-white/20 disabled:opacity-60 disabled:cursor-not-allowed border border-white/20 transition-colors py-3 rounded-lg font-medium shadow-lg backdrop-blur-sm text-sm">
+          {submitting ? 'Memproses...' : 'Login'}
         </button>
       </form>
     </motion.div>
