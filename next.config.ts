@@ -32,6 +32,7 @@ const localOrigins = getLocalNetworkOrigins();
 
 const nextConfig: NextConfig = {
   /* config options here */
+  output: "standalone",
   allowedDevOrigins: localOrigins,
   experimental: {
     agentFeedback: true,

@@ -1,0 +1,57 @@
+services:
+  app:
+    container_name: vedex-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+
+      # ===== DATABASE =====
+      # Contoh koneksi lokal antar container di Portainer:
+      # postgresql://<user>:<password>@<nama_container_postgres>:5432/<nama_db>?sslmode=disable
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTH_SECRET=${AUTH_SECRET}
+
+      # ===== LIBRECHAT AGENT =====
+      - LIBRECHAT_API_URL=${LIBRECHAT_API_URL}
+      - LIBRECHAT_API_KEY=${LIBRECHAT_API_KEY}
+      - LIBRECHAT_MODEL=${LIBRECHAT_MODEL}
+      - LIBRECHAT_PROMPT_ENGINEER_MODEL=${LIBRECHAT_PROMPT_ENGINEER_MODEL}
+      - LIBRECHAT_IMAGE_GENERATOR_MODEL=${LIBRECHAT_IMAGE_GENERATOR_MODEL}
+      - LIBRECHAT_QUOTE_RESEARCHER_MODEL=${LIBRECHAT_QUOTE_RESEARCHER_MODEL}
+
+      # ===== N8N WEBHOOK =====
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
+
+      # ===== GEMINI IMAGE =====
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_IMAGE_MODEL=${GEMINI_IMAGE_MODEL:-gemini-3.1-flash-image}
+
+      # ===== S3 STORAGE =====
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_BUCKET=${S3_BUCKET:-vedex}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+
+      # ===== TEXT TO IMAGE (T2I) API =====
+      - t2i_header=${t2i_header:-X-API-Key}
+      - t2i_value=${t2i_value:-}
+
+    networks:
+      - default
+      - postgres_net
+
+networks:
+  default:
+    name: vedex-internal-net
+  postgres_net:
+    # Menggunakan network lokal yang sudah ada di Portainer tempat PostgreSQL berjalan
+    external: true
+    name: ${POSTGRES_NETWORK_NAME:-postgres-network}
