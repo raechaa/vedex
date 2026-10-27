@@ -32,14 +32,38 @@ export default function App() {
 
   // --- SESSION INIT (cek cookie session di server) ---
   useEffect(() => {
-    getCurrentUser().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-        loadQuotes();
-      } else {
-        setView('login');
+    let isMounted = true;
+
+    // Safety fallback timeout: jika pengecekan sesi terhambat atau lambat di HP,
+    // langsung alihkan ke tampilan login agar layar HP tidak stuck di loading
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        setView((prev) => (prev === 'loading_init' ? 'login' : prev));
       }
-    });
+    }, 1200);
+
+    getCurrentUser()
+      .then((user) => {
+        if (!isMounted) return;
+        clearTimeout(safetyTimeout);
+        if (user) {
+          setCurrentUser(user);
+          loadQuotes();
+        } else {
+          setView('login');
+        }
+      })
+      .catch((err) => {
+        console.warn('Session check error or rejected:', err);
+        if (!isMounted) return;
+        clearTimeout(safetyTimeout);
+        setView('login');
+      });
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   // LOAD QUOTES
@@ -119,6 +143,15 @@ export default function App() {
             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-4 text-white/80 text-sm">
               <Loader2 className="animate-spin" size={32} />
               <p>{isLoading ? 'Memuat data quotes...' : 'Memuat Sistem Bengkel...'}</p>
+              {view === 'loading_init' && (
+                <button
+                  type="button"
+                  onClick={() => setView('login')}
+                  className="text-xs text-white/60 hover:text-white underline transition-colors mt-2"
+                >
+                  Lanjut ke Login
+                </button>
+              )}
             </motion.div>
           )}
 

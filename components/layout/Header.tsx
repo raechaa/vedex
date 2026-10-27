@@ -70,12 +70,12 @@ export default function Header({
             </div>
           )}
         </div>
-        <nav className="flex gap-2 md:gap-3 text-xs md:text-sm font-medium items-center text-white">
-          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm">
-            <Info size={14} /> About
+        <nav className="flex gap-1.5 md:gap-3 text-xs md:text-sm font-medium items-center text-white">
+          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm" title="About">
+            <Info size={14} /> <span className="hidden sm:inline">About</span>
           </GlassButton>
-          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm">
-            <Wrench size={14} /> Services
+          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm" title="Services">
+            <Wrench size={14} /> <span className="hidden sm:inline">Services</span>
           </GlassButton>
           
           {isLoggedIn && (
