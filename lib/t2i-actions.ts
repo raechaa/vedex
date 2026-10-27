@@ -21,6 +21,7 @@ function getT2IHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json, image/*, */*',
+    'ngrok-skip-browser-warning': 'true',
   };
   if (headerName && headerValue) {
     headers[headerName] = headerValue;

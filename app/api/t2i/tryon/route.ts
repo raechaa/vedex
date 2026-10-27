@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     const headerValue = process.env.t2i_value || process.env.T2I_VALUE || '';
     const headers: Record<string, string> = {
       'Accept': 'application/json, image/*, */*',
+      'ngrok-skip-browser-warning': 'true',
     };
     if (headerName && headerValue) {
       headers[headerName] = headerValue;
