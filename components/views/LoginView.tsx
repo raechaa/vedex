@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { GlassButton } from '@/components/ui/glass-button';
 
 export default function LoginView({ onLogin, fadeVariants }) {
   const [email, setEmail] = useState('');
@@ -81,9 +82,16 @@ export default function LoginView({ onLogin, fadeVariants }) {
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <button type="submit" disabled={submitting} className="mt-2 md:mt-4 w-full bg-white/10 hover:bg-white/20 disabled:opacity-60 disabled:cursor-not-allowed border border-white/20 transition-colors py-3 rounded-lg font-medium shadow-lg backdrop-blur-sm text-sm">
+        <GlassButton 
+          type="submit" 
+          disabled={submitting} 
+          variant="primary" 
+          size="lg" 
+          glow 
+          className="mt-2 md:mt-4 w-full"
+        >
           {submitting ? 'Memproses...' : 'Login'}
-        </button>
+        </GlassButton>
       </form>
     </motion.div>
   );

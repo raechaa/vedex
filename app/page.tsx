@@ -14,6 +14,7 @@ import LoginView from '@/components/views/LoginView';
 import QuoteList from '@/components/views/QuoteList';
 import Worksheet from '@/components/views/Worksheet';
 import UserManagement from '@/components/views/UserManagement';
+import Text2ImageView from '@/components/views/Text2ImageView';
 import MaintenanceModal from '@/components/modals/MaintenanceModal';
 import ProfileModal from '@/components/modals/ProfileModal';
 
@@ -102,6 +103,8 @@ export default function App() {
       <Header 
         isLoggedIn={view !== 'login' && view !== 'loading' && view !== 'loading_init'}
         onNavigateHome={() => setView('quotes')}
+        activeView={view}
+        onSelectMenu={(menu) => setView(menu)}
         onMaintenanceClick={() => setMaintenanceModalOpen(true)}
         onProfileClick={() => setProfileModalOpen(true)}
         isAdmin={currentUser?.role === 'admin'}
@@ -109,7 +112,7 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      <main className={`relative z-10 flex-1 flex flex-col p-4 pt-2 md:p-10 md:pt-4 overflow-hidden ${isCenteredLayout ? 'items-center justify-center' : 'items-start justify-start'}`}>
+      <main className={`relative z-10 flex-1 flex flex-col p-4 pt-2 md:p-10 md:pt-4 overflow-y-auto overflow-x-hidden ${isCenteredLayout ? 'items-center justify-center' : 'items-start justify-start'}`}>
         <AnimatePresence mode="wait">
           
           {(view === 'loading' || view === 'loading_init') && (
@@ -130,6 +133,10 @@ export default function App() {
               onSelectQuote={(quote) => { setSelectedQuote(quote); setView('worksheet'); }} 
               fadeVariants={fadeVariants} 
             />
+          )}
+
+          {view === 't2i' && (
+            <Text2ImageView fadeVariants={fadeVariants} />
           )}
 
           {view === 'users' && currentUser?.role === 'admin' && (

@@ -51,3 +51,11 @@ CREATE TABLE IF NOT EXISTS quote (
   hook_text TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Tabel text2image untuk konfigurasi dan riwayat model Text to Image / Try-on
+CREATE TABLE IF NOT EXISTS text2image (
+  id SERIAL PRIMARY KEY,
+  base_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);

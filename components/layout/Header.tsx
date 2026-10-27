@@ -1,8 +1,31 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Settings, LogOut, Info, Wrench, AlertTriangle, Users } from 'lucide-react';
+import { User, Settings, LogOut, Info, Wrench, AlertTriangle, Users, Sparkles, Quote } from 'lucide-react';
+import { GlassButton } from '@/components/ui/glass-button';
 
-export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick, onProfileClick, onLogout, isAdmin, onUsersClick }) {
+interface HeaderProps {
+  isLoggedIn: boolean;
+  onNavigateHome: () => void;
+  onMaintenanceClick: () => void;
+  onProfileClick: () => void;
+  onLogout: () => void;
+  isAdmin: boolean;
+  onUsersClick: () => void;
+  activeView?: string;
+  onSelectMenu?: (menu: 'quotes' | 't2i') => void;
+}
+
+export default function Header({ 
+  isLoggedIn, 
+  onNavigateHome, 
+  onMaintenanceClick, 
+  onProfileClick, 
+  onLogout, 
+  isAdmin, 
+  onUsersClick,
+  activeView = 'quotes',
+  onSelectMenu,
+}: HeaderProps) {
   const [isProfileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isLogoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
@@ -14,27 +37,57 @@ export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick,
   return (
     <>
       <header className="relative z-40 flex items-center justify-between px-4 py-3 md:px-10 md:py-6">
-        <h1 className="text-xl md:text-3xl font-bold tracking-wider cursor-pointer text-white flex items-center gap-2" onClick={onNavigateHome}>
-          <span className="bg-gradient-to-r from-purple-500 to-blue-500 px-3 py-1 rounded-lg text-white shadow-lg">
-            Vedex
-          </span>
-        </h1>
-        <nav className="flex gap-2 md:gap-4 text-xs md:text-sm font-medium items-center text-white">
-          <button onClick={onMaintenanceClick} className="px-3 py-1.5 md:px-5 md:py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-colors shadow-lg backdrop-blur-sm flex items-center gap-1.5">
+        <div className="flex items-center gap-3 md:gap-5">
+          <h1 className="text-xl md:text-3xl font-bold tracking-wider cursor-pointer text-white flex items-center gap-2" onClick={onNavigateHome}>
+            <span className="bg-gradient-to-r from-purple-500 to-blue-500 px-3 py-1 rounded-lg text-white shadow-lg">
+              Vedex
+            </span>
+          </h1>
+
+          {/* Menu di samping logo VEDEX: 1. T-2-I, 2. Quote */}
+          {isLoggedIn && onSelectMenu && (
+            <div className="flex items-center gap-1.5 bg-white/10 p-1 rounded-2xl border border-white/20 backdrop-blur-md shadow-lg">
+              <GlassButton
+                type="button"
+                onClick={() => onSelectMenu('t2i')}
+                variant={activeView === 't2i' ? 'active' : 'ghost'}
+                size="sm"
+                className="gap-1.5"
+              >
+                <Sparkles size={14} className={activeView === 't2i' ? 'text-yellow-300' : 'text-white/60'} />
+                <span>T-2-I</span>
+              </GlassButton>
+              <GlassButton
+                type="button"
+                onClick={() => onSelectMenu('quotes')}
+                variant={activeView === 'quotes' || activeView === 'worksheet' ? 'active' : 'ghost'}
+                size="sm"
+                className="gap-1.5"
+              >
+                <Quote size={14} className={activeView === 'quotes' || activeView === 'worksheet' ? 'text-yellow-300' : 'text-white/60'} />
+                <span>Quote</span>
+              </GlassButton>
+            </div>
+          )}
+        </div>
+        <nav className="flex gap-2 md:gap-3 text-xs md:text-sm font-medium items-center text-white">
+          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm">
             <Info size={14} /> About
-          </button>
-          <button onClick={onMaintenanceClick} className="px-3 py-1.5 md:px-5 md:py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-colors shadow-lg backdrop-blur-sm flex items-center gap-1.5">
+          </GlassButton>
+          <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm">
             <Wrench size={14} /> Services
-          </button>
+          </GlassButton>
           
           {isLoggedIn && (
             <div className="relative ml-1 md:ml-2">
-              <button 
+              <GlassButton 
                 onClick={() => setProfileDropdownOpen(!isProfileDropdownOpen)} 
-                className="p-1.5 md:p-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full transition-colors shadow-lg backdrop-blur-sm flex items-center justify-center"
+                variant="default"
+                size="icon"
+                className="rounded-full h-9 w-9"
               >
-                <User size={16} className="md:w-[18px] md:h-[18px]" />
-              </button>
+                <User size={16} />
+              </GlassButton>
               <AnimatePresence>
                 {isProfileDropdownOpen && (
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-3 w-48 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col">
@@ -75,18 +128,20 @@ export default function Header({ isLoggedIn, onNavigateHome, onMaintenanceClick,
               <h2 className="text-xl font-bold mb-2">Konfirmasi Logout</h2>
               <p className="text-white/70 text-sm mb-6">Apakah Anda yakin ingin keluar dari sistem?</p>
               <div className="flex justify-center gap-3">
-                <button 
+                <GlassButton 
                   onClick={() => setLogoutConfirmOpen(false)} 
-                  className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-colors text-sm"
+                  variant="default"
+                  size="default"
                 >
                   Batal
-                </button>
-                <button 
+                </GlassButton>
+                <GlassButton 
                   onClick={() => { setLogoutConfirmOpen(false); onLogout(); }} 
-                  className="px-5 py-2.5 bg-red-500/60 hover:bg-red-500/80 border border-red-400/50 rounded-lg transition-colors text-sm font-medium"
+                  variant="danger"
+                  size="default"
                 >
                   Ya, Logout
-                </button>
+                </GlassButton>
               </div>
             </motion.div>
           </motion.div>
