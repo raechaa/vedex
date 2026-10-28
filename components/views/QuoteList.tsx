@@ -7,7 +7,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Quote, FileQuestion, ChevronDown, ChevronRight, User, LayoutTemplate, Search, Plus, X, Loader2 } from 'lucide-react';
 import { runQuoteQuery } from '@/lib/actions';
 
-export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userName = '' }) {
+interface QuoteListProps {
+  quotes: any[];
+  onSelectQuote: (quote: any) => void;
+  fadeVariants?: any;
+  userName?: string;
+}
+
+export default function QuoteList({ quotes = [], onSelectQuote, fadeVariants, userName = '' }: QuoteListProps) {
   const [ideaText, setIdeaText] = useState('');
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryStatus, setQueryStatus] = useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null);
@@ -27,11 +34,11 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userNam
   };
 
   const [groupBy, setGroupBy] = useState('public_figure');
-  const [expandedNodes, setExpandedNodes] = useState({});
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const toggleNode = (parentName) => {
+  const toggleNode = (parentName: string) => {
     setExpandedNodes(prev => ({ ...prev, [parentName]: !prev[parentName] }));
   };
 
@@ -41,13 +48,13 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userNam
     
     // Filter by status
     if (statusFilter !== 'all') {
-      result = result.filter(q => q.status === statusFilter);
+      result = result.filter((q: any) => q.status === statusFilter);
     }
     
     // Filter by search term
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(q => 
+      result = result.filter((q: any) => 
         (q.public_figure || '').toLowerCase().includes(term) ||
         (q.main_topic || '').toLowerCase().includes(term) ||
         (q.quote_text || '').toLowerCase().includes(term)
@@ -57,7 +64,7 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userNam
     return result;
   }, [quotes, searchTerm, statusFilter]);
 
-  const groupedData = filteredQuotes.reduce((acc, curr) => {
+  const groupedData = filteredQuotes.reduce<Record<string, any[]>>((acc, curr: any) => {
     const key = curr[groupBy] || 'Uncategorized';
     if (!acc[key]) acc[key] = [];
     acc[key].push(curr);
@@ -181,7 +188,7 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userNam
         </div>
       ) : (
         <div className="space-y-6 w-full">
-          {Object.entries(groupedData).map(([parentName, items], idx) => {
+          {Object.entries(groupedData).map(([parentName, items]: [string, any[]], idx) => {
             const isExpanded = !!expandedNodes[parentName];
             return (
               <div key={idx} className="relative flex flex-col">
@@ -210,7 +217,7 @@ export default function QuoteList({ quotes, onSelectQuote, fadeVariants, userNam
                       className="relative pl-[38px] overflow-hidden"
                     >
                       <div className="pt-2 pb-2 flex flex-col gap-4">
-                        {items.map((item, index) => {
+                        {items.map((item: any, index: number) => {
                           const isLast = index === items.length - 1;
                           const isFirst = index === 0;
                           const childLabel = groupBy === 'public_figure' ? item.main_topic : item.public_figure;

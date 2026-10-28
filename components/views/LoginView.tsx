@@ -3,14 +3,19 @@ import { motion } from 'framer-motion';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { GlassButton } from '@/components/ui/glass-button';
 
-export default function LoginView({ onLogin, fadeVariants }) {
+interface LoginViewProps {
+  onLogin: (email: string, password: string) => Promise<string | null>;
+  fadeVariants?: any;
+}
+
+export default function LoginView({ onLogin, fadeVariants }: LoginViewProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validasi sederhana

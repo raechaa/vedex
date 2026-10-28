@@ -750,7 +750,6 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
                         </span>
                         <span className="text-xs font-bold">{style.name}</span>
                       </div>
-                      {style.desc && <span className="text-[10px] text-white/50">{style.desc}</span>}
                     </GlassButton>
                   );
                 })}
@@ -778,7 +777,6 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
                     >
                       <span className="text-lg leading-none mb-1 opacity-80">{ratio.icon}</span>
                       <span className="text-xs font-bold">{ratio.label}</span>
-                      {ratio.name && <span className="text-[10px] text-white/50">{ratio.name}</span>}
                     </GlassButton>
                   );
                 })}

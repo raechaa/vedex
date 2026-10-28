@@ -6,13 +6,20 @@ import { updateProfileNameAction, changePasswordAction } from '@/lib/user-action
 const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-white/50';
 const readonlyCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white/60 outline-none cursor-not-allowed';
 
-export default function ProfileModal({ isOpen, onClose, user, onUserUpdated }) {
+interface ProfileModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  user: any;
+  onUserUpdated: (user: any) => void;
+}
+
+export default function ProfileModal({ isOpen, onClose, user, onUserUpdated }: ProfileModalProps) {
   const [name, setName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [nameMsg, setNameMsg] = useState(null);
-  const [pwMsg, setPwMsg] = useState(null);
+  const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -28,9 +35,9 @@ export default function ProfileModal({ isOpen, onClose, user, onUserUpdated }) {
     const res = await updateProfileNameAction(name);
     setBusy(false);
     if (res.success) {
-      setNameMsg({ ok: true, text: res.message });
+      setNameMsg({ ok: true, text: res.message || 'Nama berhasil diperbarui' });
       onUserUpdated({ ...user, name: name.trim() });
-    } else setNameMsg({ ok: false, text: res.error });
+    } else setNameMsg({ ok: false, text: res.error || 'Gagal memperbarui nama' });
   };
 
   const savePassword = async () => {
@@ -43,12 +50,12 @@ export default function ProfileModal({ isOpen, onClose, user, onUserUpdated }) {
     const res = await changePasswordAction(currentPassword, newPassword);
     setBusy(false);
     if (res.success) {
-      setPwMsg({ ok: true, text: res.message });
+      setPwMsg({ ok: true, text: res.message || 'Password berhasil diubah' });
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
-    } else setPwMsg({ ok: false, text: res.error });
+    } else setPwMsg({ ok: false, text: res.error || 'Gagal mengubah password' });
   };
 
-  const Msg = ({ m }) => m ? <p className={`text-xs mt-2 ${m.ok ? 'text-green-300' : 'text-red-300'}`}>{m.text}</p> : null;
+  const Msg = ({ m }: { m: { ok: boolean; text: string } | null }) => m ? <p className={`text-xs mt-2 ${m.ok ? 'text-green-300' : 'text-red-300'}`}>{m.text}</p> : null;
 
   return (
     <AnimatePresence>

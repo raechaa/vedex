@@ -6,10 +6,25 @@ import { listUsers, addUserAction, updateUserAction } from '@/lib/user-actions';
 const inputCls = 'w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white outline-none focus:border-white/50';
 const emptyForm = { id: '', email: '', name: '', role: 'user', is_active: true, password: '' };
 
-export default function UserManagement({ currentUserId, onBack, fadeVariants }) {
-  const [users, setUsers] = useState([]);
+interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  is_active: boolean;
+  last_login_at?: string | null;
+}
+
+interface UserManagementProps {
+  currentUserId: string;
+  onBack: () => void;
+  fadeVariants?: any;
+}
+
+export default function UserManagement({ currentUserId, onBack, fadeVariants }: UserManagementProps) {
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null); // null = modal tertutup
+  const [form, setForm] = useState<any>(null); // null = modal tertutup
   const [isEdit, setIsEdit] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -23,17 +38,18 @@ export default function UserManagement({ currentUserId, onBack, fadeVariants }) 
   useEffect(() => { load(); }, [load]);
 
   const openAdd = () => { setForm({ ...emptyForm }); setIsEdit(false); setError(''); };
-  const openEdit = (u) => { setForm({ ...u, password: '' }); setIsEdit(true); setError(''); };
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const openEdit = (u: any) => { setForm({ ...u, password: '' }); setIsEdit(true); setError(''); };
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
 
   const submit = async () => {
+    if (!form) return;
     setSaving(true); setError('');
     const res = isEdit ? await updateUserAction(form) : await addUserAction(form);
     setSaving(false);
     if (res.success) { setForm(null); load(); } else setError(res.error);
   };
 
-  const fmt = (d) => d ? new Date(d).toLocaleString('id-ID') : '-';
+  const fmt = (d: any) => d ? new Date(d).toLocaleString('id-ID') : '-';
 
   return (
     <motion.div variants={fadeVariants} initial="hidden" animate="visible" exit="exit" className="w-full max-w-5xl mx-auto flex flex-col gap-4 overflow-hidden">

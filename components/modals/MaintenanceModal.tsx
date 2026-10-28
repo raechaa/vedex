@@ -2,7 +2,12 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 
-export default function MaintenanceModal({ isOpen, onClose }) {
+interface MaintenanceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (

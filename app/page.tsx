@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 // Import server actions
 import { getQuotes } from '@/lib/actions';
 import { loginAction, logoutAction, getCurrentUser } from '@/lib/auth-actions';
+import type { SessionUser } from '@/lib/auth';
 
 // Import components
 import Header from '@/components/layout/Header';
@@ -21,10 +22,10 @@ import ProfileModal from '@/components/modals/ProfileModal';
 export default function App() {
   // GLOBAL STATE
   const [view, setView] = useState('loading_init');
-  const [selectedQuote, setSelectedQuote] = useState(null);
-  const [userQuotes, setUserQuotes] = useState([]);
+  const [selectedQuote, setSelectedQuote] = useState<any>(null);
+  const [userQuotes, setUserQuotes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
 
   // MODAL STATE
   const [isMaintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
@@ -84,7 +85,7 @@ export default function App() {
 
   // LOGIC ACTIONS
   // Mengembalikan pesan error (string) bila gagal, atau null bila berhasil
-  const handleLogin = async (email, password) => { 
+  const handleLogin = async (email: string, password: string): Promise<string | null> => { 
     const result = await loginAction(email, password);
     if (!result.success) return result.error;
     setCurrentUser(result.user);
@@ -102,11 +103,11 @@ export default function App() {
     setView('login');
   };
 
-  const handleUpdateQuote = async (updatedData) => {
+  const handleUpdateQuote = async (updatedData: any) => {
     setSelectedQuote(updatedData);
     
     // Update local state
-    setUserQuotes(prev => prev.map(q => 
+    setUserQuotes(prev => prev.map((q: any) => 
       q.quote_id === updatedData.quote_id ? updatedData : q
     ));
   };
@@ -163,7 +164,7 @@ export default function App() {
             <QuoteList 
               quotes={userQuotes} 
               userName={currentUser?.name || ''}
-              onSelectQuote={(quote) => { setSelectedQuote(quote); setView('worksheet'); }} 
+              onSelectQuote={(quote: any) => { setSelectedQuote(quote); setView('worksheet'); }} 
               fadeVariants={fadeVariants} 
             />
           )}

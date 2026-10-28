@@ -7,8 +7,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, Code, Wand2, X, ImageIcon, Upload, Play, Pause, Volume2 } from 'lucide-react';
 import { updateQuote, updateQuoteHashtag, updateQuoteHookText } from '@/lib/actions';
 
+interface NotificationProps {
+  message: string;
+  type: string;
+  onClose: () => void;
+}
+
 // Komponen notifikasi sederhana
-const Notification = ({ message, type, onClose }) => {
+const Notification = ({ message, type, onClose }: NotificationProps) => {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
@@ -62,11 +68,17 @@ const parseHookScript = (raw: string | null | undefined) => {
   }
 };
 
-export default function Worksheet({ quote, onBack, onUpdateQuote }) {
-const [copiedField, setCopiedField] = useState(null);
+interface WorksheetProps {
+  quote: any;
+  onBack: () => void;
+  onUpdateQuote: (quote: any) => void;
+}
+
+export default function Worksheet({ quote, onBack, onUpdateQuote }: WorksheetProps) {
+const [copiedField, setCopiedField] = useState<string | null>(null);
 const [isHookExpanded, setIsHookExpanded] = useState(false);
 const [hookCaption, setHookCaption] = useState('');
-const [notification, setNotification] = useState(null);
+const [notification, setNotification] = useState<{ message: string; type: string } | null>(null);
 
 // Input baru untuk payload
 const [media, setMedia] = useState('');
@@ -303,19 +315,19 @@ const hasEditedPayloadRef = useRef(false);
         if (parsedData && typeof parsedData === 'object') {
           // Handle suggestion format (array of objects)
           if (Array.isArray(parsedData.suggestion)) {
-            const hookTexts = [];
-            const hashtags = [];
+            const hookTexts: string[] = [];
+            const hashtags: string[] = [];
             
-            parsedData.suggestion.forEach((item) => {
+            parsedData.suggestion.forEach((item: any) => {
               if (item.hook_text) {
                 // Split hook_text by comma and add to array
-                item.hook_text.split(',').forEach(text => {
+                item.hook_text.split(',').forEach((text: string) => {
                   const trimmedText = text.trim();
                   if (trimmedText) hookTexts.push(trimmedText);
                 });
               }
               if (Array.isArray(item.hashtag)) {
-                item.hashtag.forEach((tag) => {
+                item.hashtag.forEach((tag: any) => {
                   if (typeof tag === 'string') hashtags.push(tag.trim());
                 });
               }
@@ -329,14 +341,14 @@ const hasEditedPayloadRef = useRef(false);
           else {
             if (Array.isArray(parsedData.hook_text)) {
               // Split each hook_text by comma and flatten
-              const hookTexts = parsedData.hook_text.flatMap(text => 
-                String(text).split(',').map(t => t.trim()).filter(Boolean)
+              const hookTexts = parsedData.hook_text.flatMap((text: any) => 
+                String(text).split(',').map((t: string) => t.trim()).filter(Boolean)
               );
               setGeneratedHookTexts(hookTexts);
             }
             
             if (Array.isArray(parsedData.hashtag)) {
-              setGeneratedHashtags(parsedData.hashtag.map(tag => String(tag).trim()).filter(Boolean));
+              setGeneratedHashtags(parsedData.hashtag.map((tag: any) => String(tag).trim()).filter(Boolean));
             }
           }
         }
@@ -347,8 +359,8 @@ const hasEditedPayloadRef = useRef(false);
           const lines = quote.hashtag.split('\n').filter(Boolean);
           if (lines.length > 0) {
             // Asumsikan baris pertama adalah hook text, sisanya hashtag
-            const firstLine = lines[0].split(',').map(t => t.trim()).filter(Boolean);
-            const remainingLines = lines.slice(1).join(' ').split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
+            const firstLine = lines[0].split(',').map((t: string) => t.trim()).filter(Boolean);
+            const remainingLines = lines.slice(1).join(' ').split(/[\s,]+/).map((t: string) => t.trim()).filter(Boolean);
             setGeneratedHookTexts(firstLine);
             setGeneratedHashtags(remainingLines);
           }
@@ -400,12 +412,8 @@ const hasEditedPayloadRef = useRef(false);
   ].join('\n');
   };
     // Initialize payload preview when hookCaption changes
-  const handleCaptionChange = (e) => {
+  const handleCaptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setHookCaption(e.target.value);
-    // Auto-update payload preview only if it matches the auto-generated pattern --> tutup dulu karena useEffect akan auto-update payload preview
-    //if (!payloadPreview || payloadPreview === buildPayload()) {
-    //  setPayloadPreview(buildPayload());
-    //}
   };
 
   const collapseVariants = { 
@@ -413,22 +421,22 @@ const hasEditedPayloadRef = useRef(false);
     visible: { height: 'auto', opacity: 1, overflow: 'visible', transition: { duration: 0.3 } } 
   };
 
-  const handleCopy = (text, field) => {
+  const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const showNotification = (message, type = 'success') => {
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSaveStatus = async (e) => {
+  const handleSaveStatus = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSaving(true);
-    const formData = new FormData(e.target);
-    const status = formData.get('status');
+    const formData = new FormData(e.currentTarget);
+    const status = formData.get('status') as string;
     
     try {
       const updated = await updateQuote(quote.quote_id, { status });
@@ -757,7 +765,7 @@ const handleCopyTransitionPrompt = (text: string, index: number) => {
                         <textarea 
                           value={hookCaption} 
                           onChange={handleCaptionChange} 
-                          rows="2" 
+                          rows={2} 
                           placeholder="Contoh: Tahukah kamu rahasia sukses Steve Jobs?" 
                           className="w-full bg-black/20 border border-white/20 rounded-lg px-3 py-2 pr-12 text-white outline-none focus:border-purple-400/50 transition-colors resize-none text-sm"
                         ></textarea>
