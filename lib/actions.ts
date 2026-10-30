@@ -111,3 +111,55 @@ export async function updateQuoteHookText(quoteId: string, hookText: string) {
     throw new Error('Gagal mengupdate hook text quote.');
   }
 }
+
+// DELETE QUOTE
+export async function deleteQuote(quoteId: string | number) {
+  await requireSession();
+  try {
+    const result = await pool.query('DELETE FROM quote WHERE quote_id = $1 RETURNING quote_id', [quoteId]);
+    if (result.rowCount === 0) {
+      throw new Error('Quote tidak ditemukan di database.');
+    }
+
+    // Bersihkan file S3 terkait jika ada
+    if (process.env.S3_ACCESS_KEY && process.env.S3_BUCKET) {
+      try {
+        const { S3Client, ListObjectsV2Command, DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
+        const s3 = new S3Client({
+          region: process.env.S3_REGION || 'us-east-1',
+          endpoint: process.env.S3_ENDPOINT || 'https://s3.codeplay.web.id',
+          forcePathStyle: true,
+          credentials: {
+            accessKeyId: process.env.S3_ACCESS_KEY || '',
+            secretAccessKey: process.env.S3_SECRET_KEY || '',
+          },
+        });
+        const listRes = await s3.send(
+          new ListObjectsV2Command({
+            Bucket: process.env.S3_BUCKET,
+            Prefix: `quote-${quoteId}-`,
+          })
+        );
+        if (listRes.Contents && listRes.Contents.length > 0) {
+          const toDelete = listRes.Contents.filter((c) => c.Key).map((c) => ({ Key: c.Key! }));
+          if (toDelete.length > 0) {
+            await s3.send(
+              new DeleteObjectsCommand({
+                Bucket: process.env.S3_BUCKET,
+                Delete: { Objects: toDelete },
+              })
+            );
+          }
+        }
+      } catch (s3Error) {
+        console.warn('Gagal membersihkan aset S3 untuk quote:', quoteId, s3Error);
+      }
+    }
+
+    return { success: true, quote_id: quoteId };
+  } catch (error) {
+    console.error('Error deleting quote:', error);
+    throw new Error(error instanceof Error ? error.message : 'Gagal menghapus quote dari database.');
+  }
+}
+

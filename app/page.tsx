@@ -112,6 +112,13 @@ export default function App() {
     ));
   };
 
+  const handleDeleteQuote = (deletedQuoteId: any) => {
+    setUserQuotes(prev => prev.filter((q: any) => q.quote_id !== deletedQuoteId));
+    setSelectedQuote(null);
+    setView('quotes');
+  };
+
+
   // ANIMATION VARIANTS
   const fadeVariants = { 
     hidden: { opacity: 0, y: 20 }, 
@@ -182,6 +189,7 @@ export default function App() {
               quote={selectedQuote} 
               onBack={() => setView('quotes')} 
               onUpdateQuote={handleUpdateQuote} 
+              onDeleteQuote={handleDeleteQuote}
             />
           )}
 

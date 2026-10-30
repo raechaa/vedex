@@ -4,8 +4,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, Code, Wand2, X, ImageIcon, Upload, Play, Pause, Volume2 } from 'lucide-react';
-import { updateQuote, updateQuoteHashtag, updateQuoteHookText } from '@/lib/actions';
+import { ArrowLeft, BookOpen, Loader2, ChevronDown, ChevronUp, Save, Copy, Check, Sparkles, Code, Wand2, X, ImageIcon, Upload, Play, Pause, Volume2, Trash2, AlertTriangle } from 'lucide-react';
+import { updateQuote, updateQuoteHashtag, updateQuoteHookText, deleteQuote } from '@/lib/actions';
 
 interface NotificationProps {
   message: string;
@@ -72,13 +72,16 @@ interface WorksheetProps {
   quote: any;
   onBack: () => void;
   onUpdateQuote: (quote: any) => void;
+  onDeleteQuote?: (quoteId: any) => void;
 }
 
-export default function Worksheet({ quote, onBack, onUpdateQuote }: WorksheetProps) {
+export default function Worksheet({ quote, onBack, onUpdateQuote, onDeleteQuote }: WorksheetProps) {
 const [copiedField, setCopiedField] = useState<string | null>(null);
 const [isHookExpanded, setIsHookExpanded] = useState(false);
 const [hookCaption, setHookCaption] = useState('');
 const [notification, setNotification] = useState<{ message: string; type: string } | null>(null);
+const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+const [isDeleting, setIsDeleting] = useState(false);
 
 // Input baru untuk payload
 const [media, setMedia] = useState('');
@@ -432,6 +435,26 @@ const hasEditedPayloadRef = useRef(false);
     setTimeout(() => setNotification(null), 3000);
   };
 
+  const handleDeleteQuoteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteQuote(quote.quote_id);
+      showNotification(`Quote #${quote.quote_id} berhasil dihapus!`, 'success');
+      setIsDeleteModalOpen(false);
+      setTimeout(() => {
+        if (onDeleteQuote) {
+          onDeleteQuote(quote.quote_id);
+        } else {
+          onBack();
+        }
+      }, 500);
+    } catch (error) {
+      console.error('Error deleting quote:', error);
+      showNotification(error instanceof Error ? error.message : 'Gagal menghapus quote dari database', 'error');
+      setIsDeleting(false);
+    }
+  };
+
   const handleSaveStatus = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSaving(true);
@@ -579,16 +602,28 @@ const handleCopyTransitionPrompt = (text: string, index: number) => {
       exit={{ opacity: 0, x: -20 }} 
       className="w-full max-w-[1400px] flex flex-col h-full mx-auto overflow-hidden text-white"
     >
-      <motion.div layoutId="main-container" className="inline-flex items-center gap-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 mb-4 shadow-lg self-start">
-        <button onClick={onBack} className="hover:bg-white/20 p-2 rounded-lg transition-colors">
-          <ArrowLeft size={18} />
+      <div className="flex items-center gap-3 mb-4 self-start flex-wrap">
+        <motion.div layoutId="main-container" className="inline-flex items-center gap-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-lg">
+          <button onClick={onBack} className="hover:bg-white/20 p-2 rounded-lg transition-colors" title="Kembali ke Quotes">
+            <ArrowLeft size={18} />
+          </button>
+          <div className="flex text-sm items-center gap-2 pr-4">
+            <span className="text-white/60">Quotes</span>
+            <span>/</span>
+            <span className="font-semibold text-yellow-300">Bengkel: {quote.quote_id}</span>
+          </div>
+        </motion.div>
+
+        <button
+          type="button"
+          onClick={() => setIsDeleteModalOpen(true)}
+          className="inline-flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 active:bg-red-500/40 text-red-200 hover:text-white border border-red-500/30 hover:border-red-500/50 backdrop-blur-md rounded-xl p-3 px-4 shadow-lg transition-all duration-200 text-sm font-medium hover:scale-[1.02] active:scale-95 group cursor-pointer"
+          title="Delete Quote"
+        >
+          <Trash2 size={16} className="text-red-400 group-hover:text-red-200 transition-colors" />
+          <span>Delete Quote</span>
         </button>
-        <div className="flex text-sm items-center gap-2 pr-4">
-          <span className="text-white/60">Quotes</span>
-          <span>/</span>
-          <span className="font-semibold text-yellow-300">Bengkel: {quote.quote_id}</span>
-        </div>
-      </motion.div>
+      </div>
 
       <div className="flex-1 flex gap-6 overflow-hidden h-full pb-4">
         
@@ -1072,6 +1107,75 @@ const handleCopyTransitionPrompt = (text: string, index: number) => {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageSrc(previewImageIndex)} alt={`Generated ${previewImageIndex + 1}`} className="max-h-[85vh] rounded-xl border border-white/20 shadow-2xl" />
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL KONFIRMASI DELETE QUOTE */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-md bg-gray-900/90 backdrop-blur-xl border border-red-500/30 rounded-2xl shadow-2xl p-6 text-white overflow-hidden"
+            >
+              <div className="absolute -top-16 -left-16 w-32 h-32 bg-red-500/20 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-white mb-1">Hapus Quote #{quote.quote_id}?</h3>
+                  <p className="text-sm text-white/70 leading-relaxed mb-3">
+                    Apakah Anda yakin ingin menghapus quote ini? Data akan dihapus secara permanen dari database.
+                  </p>
+                  
+                  {quote.public_figure && (
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-xs text-white/80 mb-4">
+                      <span className="font-semibold text-white">{quote.public_figure}</span>
+                      {quote.main_topic && <span className="text-white/60"> — {quote.main_topic}</span>}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => setIsDeleteModalOpen(false)}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-sm font-medium text-white/90 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={handleDeleteQuoteConfirm}
+                      className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 active:bg-red-700 text-sm font-semibold text-white shadow-lg shadow-red-600/30 flex items-center gap-2 transition-all disabled:opacity-50 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          <span>Menghapus...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} />
+                          <span>Hapus Quote</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
