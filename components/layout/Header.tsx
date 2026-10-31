@@ -15,13 +15,13 @@ interface HeaderProps {
   onSelectMenu?: (menu: 'quotes' | 't2i') => void;
 }
 
-export default function Header({ 
-  isLoggedIn, 
-  onNavigateHome, 
-  onMaintenanceClick, 
-  onProfileClick, 
-  onLogout, 
-  isAdmin, 
+export default function Header({
+  isLoggedIn,
+  onNavigateHome,
+  onMaintenanceClick,
+  onProfileClick,
+  onLogout,
+  isAdmin,
   onUsersClick,
   activeView = 'quotes',
   onSelectMenu,
@@ -38,11 +38,17 @@ export default function Header({
     <>
       <header className="relative z-40 flex items-center justify-between px-4 py-3 md:px-10 md:py-6">
         <div className="flex items-center gap-3 md:gap-5">
-          <h1 className="text-xl md:text-3xl font-bold tracking-wider cursor-pointer text-white flex items-center gap-2" onClick={onNavigateHome}>
-            <span className="bg-gradient-to-r from-purple-500 to-blue-500 px-3 py-1 rounded-lg text-white shadow-lg">
-              Vedex
-            </span>
-          </h1>
+          <div
+            className="flex items-center cursor-pointer group"
+            onClick={onNavigateHome}
+            title="Kembali ke Beranda"
+          >
+            <img
+              src="/vedex.png"
+              alt="Vedex Logo"
+              className="w-20 h-20 rounded-2xl object-cover shadow-md group-hover:scale-105 transition-transform"
+            />
+          </div>
 
           {/* Menu di samping logo VEDEX: 1. T-2-I, 2. Quote */}
           {isLoggedIn && onSelectMenu && (
@@ -77,11 +83,11 @@ export default function Header({
           <GlassButton onClick={onMaintenanceClick} variant="subtle" size="sm" title="Services">
             <Wrench size={14} /> <span className="hidden sm:inline">Services</span>
           </GlassButton>
-          
+
           {isLoggedIn && (
             <div className="relative ml-1 md:ml-2">
-              <GlassButton 
-                onClick={() => setProfileDropdownOpen(!isProfileDropdownOpen)} 
+              <GlassButton
+                onClick={() => setProfileDropdownOpen(!isProfileDropdownOpen)}
                 variant="default"
                 size="icon"
                 className="rounded-full h-9 w-9"
@@ -108,16 +114,16 @@ export default function Header({
       {/* Konfirmasi Logout Modal */}
       <AnimatePresence>
         {isLogoutConfirmOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
           >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }} 
-              animate={{ scale: 1, y: 0 }} 
-              exit={{ scale: 0.9, y: 20 }} 
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
               className="relative w-full max-w-sm bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl shadow-2xl p-8 text-center text-white"
             >
               <div className="flex justify-center mb-4">
@@ -128,15 +134,15 @@ export default function Header({
               <h2 className="text-xl font-bold mb-2">Konfirmasi Logout</h2>
               <p className="text-white/70 text-sm mb-6">Apakah Anda yakin ingin keluar dari sistem?</p>
               <div className="flex justify-center gap-3">
-                <GlassButton 
-                  onClick={() => setLogoutConfirmOpen(false)} 
+                <GlassButton
+                  onClick={() => setLogoutConfirmOpen(false)}
                   variant="default"
                   size="default"
                 >
                   Batal
                 </GlassButton>
-                <GlassButton 
-                  onClick={() => { setLogoutConfirmOpen(false); onLogout(); }} 
+                <GlassButton
+                  onClick={() => { setLogoutConfirmOpen(false); onLogout(); }}
                   variant="danger"
                   size="default"
                 >

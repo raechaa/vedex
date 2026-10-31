@@ -35,6 +35,38 @@ interface Text2ImageViewProps {
   fadeVariants: any;
 }
 
+// Helper untuk membersihkan dan memformat pesan error API (mencegah HTML / string panjang meluap)
+function cleanUiError(message: string): string {
+  if (!message) return 'Terjadi kesalahan.';
+  const str = String(message).trim();
+
+  // Jika pesan mengandung HTML raw (seperti respon halaman ngrok / Cloudflare / Nginx 404/502)
+  if (str.includes('<!DOCTYPE') || str.includes('<html') || str.includes('<body') || str.includes('</')) {
+    const statusMatch = str.match(/(\d{3})/);
+    if (statusMatch) {
+      return `API ${statusMatch[1]} ERROR`;
+    }
+    return 'API ERROR';
+  }
+
+  // Jika format error API dengan detail teks setelahnya
+  const apiErrMatch = str.match(/^API\s+(?:error|ERROR)\s*\(?(\d{3})[^)]*\)?\s*:\s*(.*)$/i);
+  if (apiErrMatch) {
+    const code = apiErrMatch[1];
+    const rest = apiErrMatch[2].trim();
+    if (!rest || rest.includes('<!DOCTYPE') || rest.includes('<html') || rest.length > 80) {
+      return `API ${code} ERROR`;
+    }
+    return `API ${code} ERROR: ${rest}`;
+  }
+
+  // Batasi panjang jika ada pesan lain yang terlalu panjang
+  if (str.length > 150) {
+    return str.substring(0, 147) + '...';
+  }
+  return str;
+}
+
 // Aspect ratio mapping dengan patokan 9:16 (720 : 1280)
 const ASPECT_RATIOS = [
   { id: '9:16', label: '9:16', width: 720, height: 1280, icon: '▯' },
@@ -59,6 +91,11 @@ const GARMENT_PHOTO_TYPES = [
 
 // Opsi Negative Prompt / Style (Realistic, 3D Animation, 2D Cartoon)
 const NEGATIVE_PROMPT_STYLES = [
+  {
+    id: 'none',
+    name: 'None',
+    negative_prompt: '',
+  },
   {
     id: '3d_animation',
     name: '3D Animation',
@@ -106,7 +143,8 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
   // FUNCTION 1: Generate Image States
   const [prompt, setPrompt] = useState('A cinematic shot of a futuristic cyberpunk city with neon lights');
   const [selectedRatio, setSelectedRatio] = useState(ASPECT_RATIOS[0]); // default 9:16 (720x1280)
-  const [selectedStyle, setSelectedStyle] = useState(NEGATIVE_PROMPT_STYLES[0]); // default 3D Animation
+  const [selectedStyle, setSelectedStyle] = useState(NEGATIVE_PROMPT_STYLES[1]); // default 3D Animation
+  const [generateSeconds, setGenerateSeconds] = useState(0);
   const [steps, setSteps] = useState(30); // default 30
   const [seed, setSeed] = useState(42); // default 42
   const [isGenerating, setIsGenerating] = useState(false);
@@ -273,7 +311,7 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
     }
   };
 
-  // Handler Generate Image (Fungsi 1)
+  // Handler Generate Image (Fungsi 1) dengan Streaming SSE & Keep-Alive
   const handleGenerateImage = async () => {
     if (!baseUrl.trim()) {
       setGenerateError('Harap tentukan dan simpan "Url Model" terlebih dahulu.');
@@ -285,36 +323,103 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
     }
 
     setIsGenerating(true);
+    setGenerateSeconds(0);
     setGenerateError(null);
     setGenerateDebug(null);
     setS3Notification(null);
 
     const payload = {
+      base_url: baseUrl,
       prompt: prompt.trim(),
       negative_prompt: selectedStyle.negative_prompt,
       width: selectedRatio.width,
       height: selectedRatio.height,
-      steps: Number(steps) || 30,
+      steps: Number(steps) || 25,
       seed: typeof seed === 'number' ? seed : 42,
     };
 
-    setGenerateDebug({ endpoint: `${baseUrl.replace(/\/+$/, '')}/generate`, payload });
+    setGenerateDebug({
+      endpoint: `${baseUrl.replace(/\/+$/, '')}/generate (via /api/t2i/generate streaming)`,
+      payload,
+    });
+
+    const timer = setInterval(() => {
+      setGenerateSeconds((prev) => prev + 1);
+    }, 1000);
 
     try {
-      const res = await callGenerateImage(baseUrl, payload);
-      const img = res.image || (res.images && res.images[0]) || '';
-      if (img) {
-        setGeneratedImage(img);
-        setGeneratedFilename(res.filename || null);
-        setGeneratedSeed(res.seed ?? payload.seed);
-        setGenerateDebug((prev: any) => ({ ...prev, response: res.raw }));
-      } else {
-        setGenerateError(res.message || 'Model tidak mengembalikan gambar.');
-        setGenerateDebug((prev: any) => ({ ...prev, response: res.raw }));
+      const response = await fetch('/api/t2i/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(`API ${response.status} ERROR`);
+      }
+
+      if (!response.body) {
+        throw new Error('Respons tidak memiliki body stream.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let receivedComplete = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) {
+            continue;
+          }
+          if (trimmed.startsWith('data:')) {
+            const jsonStr = trimmed.slice(5).trim();
+            if (jsonStr) {
+              try {
+                const event = JSON.parse(jsonStr);
+                if (event.type === 'progress') {
+                  // Keep-alive data diterima
+                } else if (event.type === 'completed') {
+                  receivedComplete = true;
+                  if (event.image) {
+                    setGeneratedImage(event.image);
+                    setGeneratedFilename(event.filename || null);
+                    setGeneratedSeed(event.seed ?? payload.seed);
+                    setGenerateDebug((prev: any) => ({ ...prev, response: event.raw || event }));
+                  } else {
+                    setGenerateError(event.message || 'Model tidak mengembalikan gambar.');
+                  }
+                } else if (event.type === 'error') {
+                  throw new Error(event.message || 'Terjadi kesalahan pada model.');
+                }
+              } catch (parseErr: any) {
+                if (parseErr.message && !parseErr.message.includes('JSON')) {
+                  throw parseErr;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (!receivedComplete && !generateError) {
+        setGenerateDebug((prev: any) => ({ ...prev, streamClosed: true }));
       }
     } catch (err: any) {
-      setGenerateError(err.message || 'Terjadi kesalahan saat memproses generate image.');
+      setGenerateError(cleanUiError(err.message || 'Terjadi kesalahan saat memproses generate image.'));
     } finally {
+      clearInterval(timer);
       setIsGenerating(false);
     }
   };
@@ -405,7 +510,7 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
 
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
-        throw new Error(`API error (${response.status}): ${errText || response.statusText}`);
+        throw new Error(`API ${response.status} ERROR`);
       }
 
       if (!response.body) {
@@ -466,7 +571,7 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
         setTryonDebug((prev: any) => ({ ...prev, streamClosed: true }));
       }
     } catch (err: any) {
-      setTryonError(err.message || 'Terjadi kesalahan saat memproses try on.');
+      setTryonError(cleanUiError(err.message || 'Terjadi kesalahan saat memproses try on.'));
     } finally {
       setIsTryingOn(false);
     }
@@ -531,23 +636,39 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
                 <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 font-medium">
                   T-2-I Engine
                 </span>
-                {/* Oval Badge Status Server Model */}
-                {isCheckingServer && isServerOnline === null ? (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-white/60 border border-white/20 font-medium flex items-center gap-1.5">
-                    <Loader2 size={10} className="animate-spin text-white/50" />
-                    Server: Checking...
-                  </span>
-                ) : isServerOnline ? (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-medium flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Server: ON
-                  </span>
-                ) : (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30 font-medium flex items-center gap-1.5 shadow-sm shadow-rose-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                    Server: OFF
-                  </span>
-                )}
+                {/* Tombol Status Server Model (Klik untuk Cek Ulang) */}
+                <button
+                  type="button"
+                  onClick={() => checkHealth(baseUrl)}
+                  disabled={isCheckingServer || !baseUrl.trim()}
+                  title="Klik untuk cek ulang status server model"
+                  className={`text-xs px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed ${
+                    isCheckingServer
+                      ? 'bg-white/10 text-white/70 border border-white/20'
+                      : isServerOnline
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30 shadow-sm shadow-emerald-500/20 active:scale-95'
+                      : 'bg-rose-500/20 text-rose-300 border border-rose-400/40 hover:bg-rose-500/30 shadow-sm shadow-rose-500/20 active:scale-95'
+                  }`}
+                >
+                  {isCheckingServer ? (
+                    <>
+                      <Loader2 size={11} className="animate-spin text-white/60" />
+                      <span>Server: Checking...</span>
+                    </>
+                  ) : isServerOnline ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Server: ON</span>
+                      <RefreshCw size={10} className="text-emerald-300/70 ml-0.5 opacity-60 hover:opacity-100" />
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      <span>Server: OFF</span>
+                      <RefreshCw size={10} className="text-rose-300/70 ml-0.5 opacity-60 hover:opacity-100" />
+                    </>
+                  )}
+                </button>
               </h2>
               <p className="text-xs text-white/60">
                 Konfigurasi Base URL model server dan jalankan tugas komputasi AI
@@ -728,7 +849,7 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
               </div>
 
               {/* Radio Button Options: Realistic, 3D Animation (default), 2D Cartoon */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {NEGATIVE_PROMPT_STYLES.map((style) => {
                   const isSelected = selectedStyle.id === style.id;
                   return (
@@ -833,9 +954,9 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
 
             {/* Error Message */}
             {generateError && (
-              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-200 text-xs flex items-start gap-2">
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-200 text-xs flex items-start gap-2 max-w-full overflow-hidden">
                 <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <div className="flex-1 break-words">{generateError}</div>
+                <div className="flex-1 min-w-0 break-words line-clamp-3 select-text font-medium">{generateError}</div>
               </div>
             )}
 
@@ -850,7 +971,7 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
             >
               {isGenerating ? (
                 <>
-                  <Loader2 size={18} className="animate-spin" /> Sedang Memproses Generate Image...
+                  <Loader2 size={18} className="animate-spin" /> Sedang Memproses Generate Image (${Math.floor(generateSeconds / 60).toString().padStart(2, '0')}:${(generateSeconds % 60).toString().padStart(2, '0')})...
                 </>
               ) : (
                 <>
@@ -983,9 +1104,14 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
                   <Sparkles className="absolute inset-0 m-auto text-purple-300" size={24} />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-white">Memproses Image AI...</h4>
+                  <h4 className="font-semibold text-white flex items-center justify-center gap-2">
+                    <span>Memproses Image AI...</span>
+                    <span className="text-purple-300 font-mono text-xs px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30">
+                      {Math.floor(generateSeconds / 60).toString().padStart(2, '0')}:{(generateSeconds % 60).toString().padStart(2, '0')}
+                    </span>
+                  </h4>
                   <p className="text-xs text-white/60 max-w-sm mt-1">
-                    Mengirim prompt ke {baseUrl}/generate dengan dimensi {selectedRatio.width}x{selectedRatio.height}, steps {steps}, seed {seed}. Harap tunggu sebentar.
+                    Sedang me-render gambar AI melalui model server ({selectedRatio.width}x{selectedRatio.height}, steps {steps}, seed {seed}). Koneksi tetap aktif menunggu komputasi GPU selesai.
                   </p>
                 </div>
               </div>
@@ -1258,9 +1384,9 @@ export default function Text2ImageView({ fadeVariants }: Text2ImageViewProps) {
 
             {/* Error Message */}
             {tryonError && (
-              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-200 text-xs flex items-start gap-2">
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-200 text-xs flex items-start gap-2 max-w-full overflow-hidden">
                 <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <div className="flex-1 break-words">{tryonError}</div>
+                <div className="flex-1 min-w-0 break-words line-clamp-3 select-text font-medium">{tryonError}</div>
               </div>
             )}
 

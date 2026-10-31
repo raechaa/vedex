@@ -52,7 +52,15 @@ export default function LoginView({ onLogin, fadeVariants }: LoginViewProps) {
       exit="exit" 
       className="w-full max-w-sm mx-auto bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-6 md:p-8 text-white"
     >
-      <h2 className="text-2xl md:text-3xl font-semibold text-center mb-6 md:mb-8">Login</h2>
+      <div className="flex flex-col items-center justify-center mb-6">
+        <img 
+          src="/vedex.jpg" 
+          alt="Vedex Logo" 
+          className="w-16 h-16 rounded-2xl object-cover shadow-2xl border border-white/20 mb-3" 
+        />
+        <h2 className="text-2xl md:text-3xl font-bold text-center tracking-tight">Login</h2>
+        <p className="text-xs text-white/60 mt-1">Vedex - Bengkel Konten Video Reels</p>
+      </div>
       
       {error && (
         <div className="mb-4 flex items-center gap-2 bg-red-500/20 border border-red-400/30 rounded-lg px-3 py-2 text-red-200 text-xs">

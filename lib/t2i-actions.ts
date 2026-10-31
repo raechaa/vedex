@@ -102,8 +102,14 @@ export async function checkModelHealth(baseUrl: string): Promise<boolean> {
 
     if (!res.ok) return false;
 
-    const data = await res.json();
-    return data?.status === 'ok' && data?.text_to_image === true;
+    const data = await res.json().catch(() => null);
+    return res.status === 200 && (
+      data?.status === 'ok' ||
+      data?.status === 'healthy' ||
+      data?.comfyui === true ||
+      data?.text_to_image === true ||
+      Boolean(data)
+    );
   } catch (error) {
     return false;
   }
@@ -168,7 +174,17 @@ export async function callGenerateImage(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      throw new Error(`API error (${response.status} ${response.statusText}): ${errText || 'Tidak ada pesan error dari model'}`);
+      let msg = `API ${response.status} ERROR`;
+      if (response.statusText) msg += ` (${response.statusText})`;
+      if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+        try {
+          const j = JSON.parse(errText);
+          if (j.detail || j.message || j.error) msg += `: ${j.detail || j.message || j.error}`;
+        } catch {
+          msg += `: ${errText.trim()}`;
+        }
+      }
+      throw new Error(msg);
     }
 
     const contentType = response.headers.get('content-type') || '';
@@ -421,7 +437,17 @@ export async function callTryOn(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      throw new Error(`API error (${response.status} ${response.statusText}): ${errText || 'Tidak ada pesan error dari model'}`);
+      let msg = `API ${response.status} ERROR`;
+      if (response.statusText) msg += ` (${response.statusText})`;
+      if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+        try {
+          const j = JSON.parse(errText);
+          if (j.detail || j.message || j.error) msg += `: ${j.detail || j.message || j.error}`;
+        } catch {
+          msg += `: ${errText.trim()}`;
+        }
+      }
+      throw new Error(msg);
     }
 
     const contentType = response.headers.get('content-type') || '';

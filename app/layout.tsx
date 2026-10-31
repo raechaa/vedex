@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "Vedex - Bengkel Konten Video Reels",
   description: "Sistem manajemen pembuatan konten video reels Instagram dari quotes tokoh terkenal.",
   keywords: ["vedex", "video reels", "quote", "instagram", "content creation"],
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/vedex.jpg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

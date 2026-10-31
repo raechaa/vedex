@@ -56,10 +56,7 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const abortController = new AbortController();
 
-    // Jika klien membatalkan request browser
-    request.signal.addEventListener('abort', () => {
-      abortController.abort();
-    });
+
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -99,8 +96,22 @@ export async function POST(request: NextRequest) {
 
           if (!backendRes.ok) {
             const errText = await backendRes.text().catch(() => '');
+            let message = `API ${backendRes.status} ERROR`;
+            if (backendRes.statusText) {
+              message += ` (${backendRes.statusText})`;
+            }
+            if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+              try {
+                const j = JSON.parse(errText);
+                if (j.detail || j.message || j.error) {
+                  message += `: ${j.detail || j.message || j.error}`;
+                }
+              } catch {
+                message += `: ${errText.trim()}`;
+              }
+            }
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'error', message: `API error (${backendRes.status} ${backendRes.statusText}): ${errText || 'Tidak ada pesan error dari model'}` })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ type: 'error', message })}\n\n`)
             );
             controller.close();
             return;
