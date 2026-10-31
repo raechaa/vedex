@@ -16,6 +16,7 @@ services:
       # Contoh koneksi lokal antar container di Portainer:
       # postgresql://<user>:<password>@<nama_container_postgres>:5432/<nama_db>?sslmode=disable
       - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_SSL=${DATABASE_SSL:-}
       - AUTH_SECRET=${AUTH_SECRET}
 
       # ===== LIBRECHAT AGENT =====
