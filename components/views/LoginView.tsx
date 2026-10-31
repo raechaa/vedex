@@ -17,23 +17,23 @@ export default function LoginView({ onLogin, fadeVariants }: LoginViewProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validasi sederhana
     if (!email.trim() || !password.trim()) {
       setError('Email dan password wajib diisi.');
       return;
     }
-    
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Format email tidak valid.');
       return;
     }
-    
+
     if (password.length < 6) {
       setError('Password minimal 6 karakter.');
       return;
     }
-    
+
     setError('');
     setSubmitting(true);
     const loginError = await onLogin(email.trim(), password);
@@ -44,50 +44,50 @@ export default function LoginView({ onLogin, fadeVariants }: LoginViewProps) {
   };
 
   return (
-    <motion.div 
-      key="login" 
-      variants={fadeVariants} 
-      initial="hidden" 
-      animate="visible" 
-      exit="exit" 
+    <motion.div
+      key="login"
+      variants={fadeVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       className="w-full max-w-sm mx-auto bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-6 md:p-8 text-white"
     >
       <div className="flex flex-col items-center justify-center mb-6">
-        <img 
-          src="/vedex.jpg" 
-          alt="Vedex Logo" 
-          className="w-16 h-16 rounded-2xl object-cover shadow-2xl border border-white/20 mb-3" 
+        <img
+          src="/vedex.png"
+          alt="Vedex Logo"
+          className="w-16 h-16 rounded-2xl object-cover shadow-2xl mb-3"
         />
         <h2 className="text-2xl md:text-3xl font-bold text-center tracking-tight">Login</h2>
         <p className="text-xs text-white/60 mt-1">Vedex - Bengkel Konten Video Reels</p>
       </div>
-      
+
       {error && (
         <div className="mb-4 flex items-center gap-2 bg-red-500/20 border border-red-400/30 rounded-lg px-3 py-2 text-red-200 text-xs">
           <AlertCircle size={14} className="shrink-0" />
           <span>{error}</span>
         </div>
       )}
-      
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-6 text-sm">
         <div className="relative border-b border-white/40 pb-2">
-          <input 
-            type="email" 
-            placeholder="Email" 
+          <input
+            type="email"
+            placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-transparent outline-none placeholder-white/70" 
+            className="w-full bg-transparent outline-none placeholder-white/70"
           />
         </div>
         <div className="relative border-b border-white/40 pb-2">
-          <input 
-            type={showPassword ? 'text' : 'password'} 
-            placeholder="Password" 
+          <input
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-transparent outline-none placeholder-white/70 pr-8" 
+            className="w-full bg-transparent outline-none placeholder-white/70 pr-8"
           />
-          <button 
+          <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-0 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
@@ -95,12 +95,12 @@ export default function LoginView({ onLogin, fadeVariants }: LoginViewProps) {
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        <GlassButton 
-          type="submit" 
-          disabled={submitting} 
-          variant="primary" 
-          size="lg" 
-          glow 
+        <GlassButton
+          type="submit"
+          disabled={submitting}
+          variant="primary"
+          size="lg"
+          glow
           className="mt-2 md:mt-4 w-full"
         >
           {submitting ? 'Memproses...' : 'Login'}
