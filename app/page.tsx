@@ -144,7 +144,7 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      <main className={`relative z-10 flex-1 flex flex-col p-4 pt-2 md:p-10 md:pt-4 overflow-y-auto overflow-x-hidden ${isCenteredLayout ? 'items-center justify-center' : 'items-start justify-start'}`}>
+      <main className={`relative z-10 flex-1 flex flex-col px-4 pb-4 pt-1 md:px-10 md:pb-8 md:pt-1 overflow-y-auto overflow-x-hidden ${isCenteredLayout ? 'items-center justify-center' : 'items-start justify-start'}`}>
         <AnimatePresence mode="wait">
           
           {(view === 'loading' || view === 'loading_init') && (

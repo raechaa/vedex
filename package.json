@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
     "framer-motion": "^14.3.0",
     "lucide-react": "^1.58.0",
     "next": "^16.4.3",

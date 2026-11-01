@@ -13,8 +13,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized: silakan login terlebih dahulu.' }, { status: 401 });
     }
 
+    const url = new URL(request.url);
+    const headerEndpoint = request.headers.get('x-endpoint');
+    const headerEngine = request.headers.get('x-model-engine');
+    const headerBaseUrl = request.headers.get('x-base-url');
+
     const body = await request.json().catch(() => ({}));
-    let baseUrl = body.base_url || body.baseUrl;
+    let baseUrl = headerBaseUrl || url.searchParams.get('base_url') || body.base_url || body.baseUrl;
     if (!baseUrl) {
       baseUrl = await getBaseUrl();
     }
@@ -28,26 +33,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Prompt deskripsi gambar tidak boleh kosong.' }, { status: 400 });
     }
 
-    const width = Number(body.width) || 1024;
-    const height = Number(body.height) || 1024;
-    const steps = Number(body.steps) || 25;
+    // Model engine switch: 'RealVis XL' -> /generate, 'Stabble Dif 3.5' -> /generate2
+    const modelEngine = headerEngine || url.searchParams.get('engine') || body.engine || body.model_engine || body.modelEngine || 'RealVis XL';
+    const endpoint = headerEndpoint || url.searchParams.get('endpoint') || body.endpoint || (modelEngine === 'Stabble Dif 3.5' ? '/generate2' : '/generate');
+    const targetUrl = `${clean}${endpoint}`;
+
+    let width = Number(body.width) || 720;
+    let height = Number(body.height) || 1024;
+
+    // Untuk Stable Diffusion 3.5 (/generate2), batasan Pydantic di Kaggle adalah 512 <= width, height <= 1024
+    if (endpoint === '/generate2' || modelEngine === 'Stabble Dif 3.5') {
+      if (width > 1024) width = 1024;
+      if (height > 1024) height = 1024;
+      if (width < 512) width = 512;
+      if (height < 512) height = 512;
+    }
+
+    const steps = Number(body.steps) || 30;
     const seed = typeof body.seed === 'number' ? body.seed : 42;
-    const cfg = typeof body.cfg === 'number' ? body.cfg : 1.0;
+    const cfg = typeof body.cfg === 'number' ? body.cfg : 6;
     const negativePrompt = body.negative_prompt ?? (body.negativePrompt ?? '');
 
+    // Payload murni yang dikirim ke backend model AI (TIDAK ada base_url, engine, endpoint)
     const backendBody: Record<string, any> = {
       prompt,
+      negative_prompt: negativePrompt,
       width,
       height,
       steps,
       seed,
       cfg,
     };
-    if (negativePrompt) {
-      backendBody.negative_prompt = negativePrompt;
-    }
-
-    const targetUrl = `${clean}/generate`;
 
     const headerName = process.env.t2i_header || process.env.T2I_HEADER || 'X-API-Key';
     const headerValue = process.env.t2i_value || process.env.T2I_VALUE || '';
@@ -102,14 +118,25 @@ export async function POST(request: NextRequest) {
             if (backendRes.statusText) {
               message += ` (${backendRes.statusText})`;
             }
-            if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+            if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html')) {
               try {
                 const j = JSON.parse(errText);
-                if (j.detail || j.message || j.error) {
-                  message += `: ${j.detail || j.message || j.error}`;
+                const rawDetail = j.detail ?? j.message ?? j.error;
+                if (typeof rawDetail === 'string') {
+                  message += `: ${rawDetail}`;
+                } else if (Array.isArray(rawDetail)) {
+                  const items = rawDetail.map((item: any) => {
+                    if (typeof item === 'string') return item;
+                    const field = Array.isArray(item.loc) ? item.loc.filter((p: string) => p !== 'body').join('.') : '';
+                    const msg = item.msg || item.message || JSON.stringify(item);
+                    return field ? `${field}: ${msg}` : msg;
+                  });
+                  message += `: ${items.join(', ')}`;
+                } else if (typeof rawDetail === 'object' && rawDetail !== null) {
+                  message += `: ${rawDetail.msg || rawDetail.message || JSON.stringify(rawDetail)}`;
                 }
               } catch {
-                message += `: ${errText.trim()}`;
+                message += `: ${errText.slice(0, 150).trim()}`;
               }
             }
             controller.enqueue(

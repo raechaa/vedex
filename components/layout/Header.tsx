@@ -36,8 +36,8 @@ export default function Header({
 
   return (
     <>
-      <header className="relative z-40 flex items-center justify-between px-4 py-3 md:px-10 md:py-6">
-        <div className="flex items-center gap-3 md:gap-5">
+      <header className="relative z-40 flex items-center justify-between px-4 py-1.5 md:px-10 md:pt-2 md:pb-1">
+        <div className="flex items-center gap-2.5 md:gap-4">
           <div
             className="flex items-center cursor-pointer group"
             onClick={onNavigateHome}
@@ -46,7 +46,7 @@ export default function Header({
             <img
               src="/vedex.png"
               alt="Vedex Logo"
-              className="w-20 h-20 rounded-2xl object-cover shadow-md group-hover:scale-105 transition-transform"
+              className="w-10 h-10 md:w-11 md:h-11 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
             />
           </div>
 

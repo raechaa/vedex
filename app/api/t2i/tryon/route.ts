@@ -100,14 +100,25 @@ export async function POST(request: NextRequest) {
             if (backendRes.statusText) {
               message += ` (${backendRes.statusText})`;
             }
-            if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+            if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html')) {
               try {
                 const j = JSON.parse(errText);
-                if (j.detail || j.message || j.error) {
-                  message += `: ${j.detail || j.message || j.error}`;
+                const rawDetail = j.detail ?? j.message ?? j.error;
+                if (typeof rawDetail === 'string') {
+                  message += `: ${rawDetail}`;
+                } else if (Array.isArray(rawDetail)) {
+                  const items = rawDetail.map((item: any) => {
+                    if (typeof item === 'string') return item;
+                    const field = Array.isArray(item.loc) ? item.loc.filter((p: string) => p !== 'body').join('.') : '';
+                    const msg = item.msg || item.message || JSON.stringify(item);
+                    return field ? `${field}: ${msg}` : msg;
+                  });
+                  message += `: ${items.join(', ')}`;
+                } else if (typeof rawDetail === 'object' && rawDetail !== null) {
+                  message += `: ${rawDetail.msg || rawDetail.message || JSON.stringify(rawDetail)}`;
                 }
               } catch {
-                message += `: ${errText.trim()}`;
+                message += `: ${errText.slice(0, 150).trim()}`;
               }
             }
             controller.enqueue(

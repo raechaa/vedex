@@ -1,8 +1,23 @@
 'use server';
 
+import dns from 'node:dns';
 import pool from './db';
 import { getSession } from './auth';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+// Pastikan runtime Node.js memprioritaskan alamat IPv4 untuk mencegah error "fetch failed" (ENETUNREACH)
+// akibat DNS Windows meresolve alamat IPv6 NAT64 (64:ff9b::) yang tidak memiliki gateway
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Abaikan jika tidak didukung runtime tertentu
+}
+
+// Toleransi SSL/TLS interceptor (Antivirus Web Shield, proxy, atau inspect certificate chain lokal di Windows)
+// agar outbound request ke Kaggle / external API tidak ditolak dengan 'self-signed certificate in certificate chain'
+try {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+} catch {}
 
 async function requireSession() {
   const user = await getSession();
@@ -139,6 +154,9 @@ export async function callGenerateImage(
     height: number;
     steps?: number;
     seed?: number;
+    cfg?: number;
+    engine?: string;
+    endpoint?: string;
     num_inference_steps?: number;
   }
 ) {
@@ -147,16 +165,30 @@ export async function callGenerateImage(
   if (!clean) throw new Error('Base URL Model belum ditentukan.');
   if (!payload.prompt?.trim()) throw new Error('Prompt tidak boleh kosong.');
 
-  const targetUrl = `${clean}/generate`;
+  const engine = payload.engine || 'RealVis XL';
+  const endpoint = payload.endpoint || (engine === 'Stabble Dif 3.5' ? '/generate2' : '/generate');
+  const targetUrl = `${clean}${endpoint}`;
   const headers = getT2IHeaders();
+
+  let width = Number(payload.width) || 720;
+  let height = Number(payload.height) || 1024;
+
+  // Untuk Stable Diffusion 3.5 (/generate2), batasan Pydantic di Kaggle adalah 512 <= width, height <= 1024
+  if (endpoint === '/generate2' || engine === 'Stabble Dif 3.5') {
+    if (width > 1024) width = 1024;
+    if (height > 1024) height = 1024;
+    if (width < 512) width = 512;
+    if (height < 512) height = 512;
+  }
 
   const requestBody = {
     prompt: payload.prompt.trim(),
     negative_prompt: payload.negative_prompt ?? '',
-    width: Number(payload.width) || 720,
-    height: Number(payload.height) || 1280,
+    width,
+    height,
     steps: Number(payload.steps ?? payload.num_inference_steps ?? 30),
     seed: typeof payload.seed === 'number' ? payload.seed : 42,
+    cfg: typeof payload.cfg === 'number' ? payload.cfg : 6,
   };
 
   try {
@@ -176,12 +208,25 @@ export async function callGenerateImage(
       const errText = await response.text().catch(() => '');
       let msg = `API ${response.status} ERROR`;
       if (response.statusText) msg += ` (${response.statusText})`;
-      if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+      if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html')) {
         try {
           const j = JSON.parse(errText);
-          if (j.detail || j.message || j.error) msg += `: ${j.detail || j.message || j.error}`;
+          const rawDetail = j.detail ?? j.message ?? j.error;
+          if (typeof rawDetail === 'string') {
+            msg += `: ${rawDetail}`;
+          } else if (Array.isArray(rawDetail)) {
+            const items = rawDetail.map((item: any) => {
+              if (typeof item === 'string') return item;
+              const field = Array.isArray(item.loc) ? item.loc.filter((p: string) => p !== 'body').join('.') : '';
+              const m = item.msg || item.message || JSON.stringify(item);
+              return field ? `${field}: ${m}` : m;
+            });
+            msg += `: ${items.join(', ')}`;
+          } else if (typeof rawDetail === 'object' && rawDetail !== null) {
+            msg += `: ${rawDetail.msg || rawDetail.message || JSON.stringify(rawDetail)}`;
+          }
         } catch {
-          msg += `: ${errText.trim()}`;
+          msg += `: ${errText.slice(0, 150).trim()}`;
         }
       }
       throw new Error(msg);
@@ -375,6 +420,78 @@ export async function saveImageToS3(imageDataUrl: string, customFilename?: strin
 }
 
 /**
+ * Server action untuk mengunggah 2 file gambar Face Swap ke MinIO S3
+ * Menghasilkan URL share publik S3 untuk dijadikan payload murni ke endpoint /faceswap
+ */
+export async function uploadFaceSwapToS3(
+  sourceImageBase64OrUrl: string,
+  targetImageBase64OrUrl: string
+): Promise<{
+  sourceUrl: string;
+  targetUrl: string;
+}> {
+  await requireSession();
+
+  const uploadSingle = async (input: string, prefix: string): Promise<string> => {
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      return input;
+    }
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ddmmyyyy = `${pad(now.getDate())}${pad(now.getMonth() + 1)}${now.getFullYear()}`;
+    const hhmmss = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+
+    let ext = 'png';
+    let contentType = 'image/png';
+    let buffer: Buffer;
+
+    const match = input.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      contentType = match[1];
+      buffer = Buffer.from(match[2], 'base64');
+      if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = 'jpg';
+      else if (contentType.includes('webp')) ext = 'webp';
+    } else {
+      buffer = Buffer.from(input, 'base64');
+    }
+
+    const filename = `${prefix}_${ddmmyyyy}_${hhmmss}_${randomSuffix}.${ext}`;
+    const s3Key = `t2i/${filename}`;
+    const bucket = process.env.S3_BUCKET || 'vedex';
+    const endpoint = (process.env.S3_ENDPOINT || 'https://s3.codeplay.web.id').replace(/\/+$/, '');
+
+    const s3 = new S3Client({
+      region: process.env.S3_REGION || 'us-east-1',
+      endpoint: endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY || '',
+        secretAccessKey: process.env.S3_SECRET_KEY || '',
+      },
+    });
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: contentType,
+      })
+    );
+
+    return `${endpoint}/${bucket}/${s3Key}`;
+  };
+
+  const [sourceUrl, targetUrl] = await Promise.all([
+    uploadSingle(sourceImageBase64OrUrl, 'faceswap_face'),
+    uploadSingle(targetImageBase64OrUrl, 'faceswap_ref'),
+  ]);
+
+  return { sourceUrl, targetUrl };
+}
+
+/**
  * Server action untuk memanggil API /tryon
  * Payload dikirim sebagai FormData:
  * - person_image (File / Blob)
@@ -559,5 +676,351 @@ export async function callTryOn(
   }
 }
 
+/**
+ * Server action untuk memanggil API Face Swap (/faceswap)
+ */
+export async function callFaceSwap(
+  baseUrl: string,
+  formData: FormData
+) {
+  await requireSession();
+  const clean = cleanUrl(baseUrl);
+  if (!clean) throw new Error('Base URL Model belum ditentukan.');
+
+  const targetUrl = `${clean}/faceswap`;
+  const headers = getT2IHeaders();
+  delete headers['Content-Type'];
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 900000);
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      let msg = `API ${response.status} ERROR`;
+      if (response.statusText) msg += ` (${response.statusText})`;
+      if (errText && !errText.includes('<!DOCTYPE') && !errText.includes('<html') && errText.length < 150) {
+        try {
+          const j = JSON.parse(errText);
+          if (j.detail || j.message || j.error) msg += `: ${j.detail || j.message || j.error}`;
+        } catch {
+          msg += `: ${errText.trim()}`;
+        }
+      }
+      throw new Error(msg);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.startsWith('image/')) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = `data:${contentType};base64,${buffer.toString('base64')}`;
+      return { success: true, image: base64, images: [base64], raw: { type: 'binary_image' } };
+    }
+
+    const data = await response.json();
+    if (data.filename) {
+      const outputUrl = `${clean}/outputs/${data.filename}`;
+      const fileHeaders: Record<string, string> = { 'Accept': 'image/*, */*' };
+      const headerName = process.env.t2i_header || process.env.T2I_HEADER || 'X-API-Key';
+      const headerValue = process.env.t2i_value || process.env.T2I_VALUE || '';
+      if (headerName && headerValue) fileHeaders[headerName] = headerValue;
+
+      let fileRes = await fetch(outputUrl, { method: 'GET', headers: fileHeaders });
+      if (!fileRes.ok) {
+        fileRes = await fetch(`${clean}/outputs/${data.filename}`, { method: 'GET', headers: fileHeaders });
+      }
+      if (!fileRes.ok) {
+        throw new Error(`Gagal mengambil gambar dari ${outputUrl}`);
+      }
+      const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+      const fileContentType = fileRes.headers.get('content-type') || 'image/png';
+      const base64 = `data:${fileContentType};base64,${fileBuffer.toString('base64')}`;
+      return {
+        success: true,
+        image: base64,
+        images: [base64],
+        filename: data.filename,
+        raw: data,
+      };
+    }
+
+    let resultImg = '';
+    if (typeof data === 'string') resultImg = data;
+    else if (data.image) resultImg = data.image;
+    else if (Array.isArray(data.images) && data.images[0]) resultImg = data.images[0];
+    else if (data.url || data.image_url) resultImg = data.url || data.image_url;
+
+    if (resultImg) {
+      if (!resultImg.startsWith('http') && !resultImg.startsWith('data:image/')) {
+        resultImg = `data:image/png;base64,${resultImg}`;
+      }
+      return { success: true, image: resultImg, raw: data };
+    }
+
+    return { success: true, image: '', raw: data };
+  } catch (error: any) {
+    console.error('Error in Face Swap:', error);
+    if (error.name === 'AbortError') {
+      throw new Error('Koneksi ke API model Face Swap timeout setelah 15 menit.');
+    }
+    throw new Error(error.message || 'Gagal memanggil API Face Swap.');
+  }
+}
+
 // Alias untuk kompatibilitas
-export const callSwapFace = callTryOn;
+export const callSwapFace = callFaceSwap;
+
+/**
+ * Helper untuk kredensial Kaggle dari environment variable
+ */
+function getKaggleCredentials() {
+  const username = (process.env.KAGGLE_USERNAME || process.env.kaggle_username || '').trim();
+  const key = (process.env.KAGGLE_KEY || process.env.kaggle_key || process.env.KAGGLE_API_KEY || '').trim();
+  const kernelSlug = (process.env.KAGGLE_KERNEL_SLUG || process.env.kaggle_kernel_slug || 'notebook-t2i-fix').trim();
+  return { username, key, kernelSlug };
+}
+
+/**
+ * Menyalakan / Menjalankan Kaggle notebook (notebook-t2i-fix) via Kaggle REST API (push)
+ */
+export async function startKaggleNotebook(customSlug?: string): Promise<{
+  success: boolean;
+  message: string;
+  status?: string;
+}> {
+  await requireSession();
+  const { username, key, kernelSlug: defaultSlug } = getKaggleCredentials();
+  const slug = customSlug?.trim() || defaultSlug;
+
+  if (!username || !key) {
+    throw new Error(
+      'Kredensial Kaggle belum dikonfigurasi. Harap tambahkan KAGGLE_USERNAME dan KAGGLE_KEY pada file .env.local terlebih dahulu.'
+    );
+  }
+
+  const authHeader = `Basic ${Buffer.from(`${username}:${key}`).toString('base64')}`;
+
+  try {
+    try {
+      dns.setDefaultResultOrder('ipv4first');
+    } catch {}
+
+    // 1. Ambil konten dan metadata notebook terbaru dari Kaggle
+    const pullUrl = `https://www.kaggle.com/api/v1/kernels/pull?userName=${encodeURIComponent(username)}&kernelSlug=${encodeURIComponent(slug)}`;
+    const pullRes = await fetch(pullUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+        'User-Agent': 'kaggle-api/1.6.14',
+      },
+      cache: 'no-store',
+    });
+
+    if (!pullRes.ok) {
+      const errText = await pullRes.text().catch(() => '');
+      throw new Error(`Gagal mengambil data notebook dari Kaggle (${pullRes.status}): ${errText || pullRes.statusText}`);
+    }
+
+    const pullContentType = pullRes.headers.get('content-type') || '';
+    const pullRawText = await pullRes.text();
+    if (pullRawText.trim().startsWith('<') || !pullContentType.includes('application/json')) {
+      if (pullRawText.includes('recaptcha') || pullRawText.includes('challenge')) {
+        throw new Error('Kaggle meminta verifikasi captcha sementara. Coba beberapa saat lagi.');
+      }
+      throw new Error(`Respon Kaggle bukan JSON (${pullRes.status}): ${pullRawText.slice(0, 100).replace(/<[^>]+>/g, '')}`);
+    }
+
+    let pullData: any;
+    try {
+      pullData = JSON.parse(pullRawText);
+    } catch {
+      throw new Error('Gagal memproses format JSON dari respon Kaggle.');
+    }
+
+    let notebookJsonStr = pullData.blob?.sourceNullable || pullData.blob?.source || pullData.text || '';
+
+    // Loop membongkar wrapper hingga menemukan format JSON Jupyter notebook yang valid ({ cells: [...] })
+    for (let i = 0; i < 10; i++) {
+      if (typeof notebookJsonStr !== 'string') break;
+      try {
+        const parsed = JSON.parse(notebookJsonStr);
+        if (parsed.cells && Array.isArray(parsed.cells)) {
+          notebookJsonStr = JSON.stringify(parsed);
+          break;
+        }
+        if (parsed.sourceNullable || parsed.source) {
+          notebookJsonStr = parsed.sourceNullable || parsed.source;
+        } else {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+
+    if (!notebookJsonStr) {
+      throw new Error(`Notebook ${slug} tidak memiliki konten sel atau gagal dibaca.`);
+    }
+
+    // 2. Kirim request push untuk memicu eksekusi GPU baru
+    const pushUrl = 'https://www.kaggle.com/api/v1/kernels/push';
+    const pushBody = {
+      slug: `${username}/${slug}`,
+      newTitle: pullData.metadata?.titleNullable || pullData.metadata?.title || slug,
+      text: notebookJsonStr,
+      language: pullData.metadata?.languageNullable || pullData.metadata?.language || 'python',
+      kernelType: pullData.metadata?.kernelTypeNullable || pullData.metadata?.kernel_type || 'notebook',
+      isPrivate: pullData.metadata?.isPrivateNullable ?? true,
+      enableGpu: pullData.metadata?.enableGpuNullable ?? true,
+      enableInternet: pullData.metadata?.enableInternetNullable ?? true,
+      datasetDataSources: pullData.metadata?.datasetDataSources || pullData.metadata?.dataset_sources || [],
+      competitionDataSources: pullData.metadata?.competitionDataSources || pullData.metadata?.competition_sources || [],
+      kernelDataSources: pullData.metadata?.kernelDataSources || pullData.metadata?.kernel_sources || [],
+      modelDataSources: pullData.metadata?.modelDataSources || pullData.metadata?.model_sources || [],
+    };
+
+    const pushRes = await fetch(pushUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'kaggle-api/1.6.14',
+      },
+      body: JSON.stringify(pushBody),
+    });
+
+    if (!pushRes.ok) {
+      const errText = await pushRes.text().catch(() => '');
+      throw new Error(`Kaggle API menolak push (${pushRes.status}): ${errText || pushRes.statusText}`);
+    }
+
+    const pushRawText = await pushRes.text().catch(() => '');
+    let pushResult: any = {};
+    try {
+      pushResult = JSON.parse(pushRawText);
+    } catch {}
+
+    return {
+      success: true,
+      message: `Notebook "${slug}" berhasil di-trigger untuk dinyalakan di Kaggle! Status: ${pushResult?.status || 'queued'}. Tunggu 1-2 menit hingga server dan ngrok tunnel aktif.`,
+      status: pushResult?.status || 'queued',
+    };
+  } catch (error: any) {
+    console.error('Error starting Kaggle notebook:', error);
+    const detail = error.cause?.message || error.cause?.code || error.message || 'Gagal menyalakan notebook di Kaggle.';
+    throw new Error(detail);
+  }
+}
+
+/**
+ * Mematikan notebook server dengan memanggil endpoint /shutdown pada server model (ngrok)
+ */
+export async function stopKaggleNotebook(baseUrl?: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  await requireSession();
+  const clean = cleanUrl(baseUrl || (await getBaseUrl()));
+  if (!clean) {
+    throw new Error('Base URL Model belum ditentukan.');
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10 detik timeout
+
+    const headers = getT2IHeaders();
+    await fetch(`${clean}/shutdown`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+    }).catch(() => null);
+
+    clearTimeout(timeout);
+
+    return {
+      success: true,
+      message: 'Perintah mematikan notebook telah dikirim! Proses pada notebook Kaggle akan segera berakhir dan GPU dimatikan.',
+    };
+  } catch (error: any) {
+    console.error('Error stopping notebook:', error);
+    return {
+      success: true,
+      message: 'Perintah shutdown telah dikirim ke server model.',
+    };
+  }
+}
+
+/**
+ * Mengecek status eksekusi notebook di Kaggle via Kaggle REST API
+ */
+export async function getKaggleNotebookStatus(customSlug?: string): Promise<{
+  hasCredentials: boolean;
+  slug: string;
+  status?: string;
+  message?: string;
+}> {
+  await requireSession();
+  const { username, key, kernelSlug: defaultSlug } = getKaggleCredentials();
+  const slug = customSlug?.trim() || defaultSlug;
+
+  if (!username || !key) {
+    return {
+      hasCredentials: false,
+      slug,
+      message: 'KAGGLE_USERNAME dan KAGGLE_KEY belum dikonfigurasi pada .env.local.',
+    };
+  }
+
+  const authHeader = `Basic ${Buffer.from(`${username}:${key}`).toString('base64')}`;
+
+  try {
+    try {
+      dns.setDefaultResultOrder('ipv4first');
+    } catch {}
+
+    const statusUrl = `https://www.kaggle.com/api/v1/kernels/status?userName=${encodeURIComponent(username)}&kernelSlug=${encodeURIComponent(slug)}`;
+    const res = await fetch(statusUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+        'User-Agent': 'kaggle-api/1.6.14',
+      },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      return {
+        hasCredentials: true,
+        slug,
+        status: 'unknown',
+      };
+    }
+
+    const data = await res.json();
+    return {
+      hasCredentials: true,
+      slug,
+      status: data.status || 'unknown',
+    };
+  } catch {
+    return {
+      hasCredentials: true,
+      slug,
+      status: 'unknown',
+    };
+  }
+}
